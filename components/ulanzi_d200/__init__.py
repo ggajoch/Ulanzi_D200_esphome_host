@@ -7,7 +7,13 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import automation
 from esphome.components import uart, light
-from esphome.const import CONF_ID, CONF_OUTPUT_ID
+from esphome.const import (
+    CONF_DEFAULT_TRANSITION_LENGTH,
+    CONF_GAMMA_CORRECT,
+    CONF_ID,
+    CONF_NAME,
+    CONF_OUTPUT_ID,
+)
 
 DEPENDENCIES = ['uart']
 AUTO_LOAD = ['json', 'light']
@@ -59,8 +65,7 @@ CONF_ITEMS = 'items'
 CONF_CHIPS = 'chips'
 CONF_LABEL = 'label'
 CONF_BG_COLOR = 'bg_color'
-CONF_BACKLIGHT_OUTPUT_ID = 'backlight_output_id'
-CONF_BACKLIGHT_LIGHT_ID = 'backlight_light_id'
+CONF_BACKLIGHT = 'backlight'
 CONF_SERVICE_ID = 'service_id'
 
 
@@ -123,11 +128,22 @@ SECTION_SCHEMA = cv.Schema({
     cv.Required(CONF_LAYOUTS): cv.ensure_list(LAYOUT_SCHEMA),
 })
 
+# The backlight light entity goes through ESPHome's own light schema and
+# register_light; the defaults keep the old hand-built entity's behaviour
+# (restore default on, no transition, linear brightness).
+BACKLIGHT_SCHEMA = light.light_schema(
+    UlanziBacklightLight,
+    light.LightType.BRIGHTNESS_ONLY,
+    default_restore_mode='RESTORE_DEFAULT_ON',
+).extend({
+    cv.Optional(CONF_DEFAULT_TRANSITION_LENGTH, default='0s'): cv.positive_time_period_milliseconds,
+    cv.Optional(CONF_GAMMA_CORRECT, default=0.0): cv.positive_float,
+})
+
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(UlanziBridge),
     cv.GenerateID(CONF_UART_ID): cv.use_id(uart.UARTComponent),
-    cv.GenerateID(CONF_BACKLIGHT_OUTPUT_ID): cv.declare_id(UlanziBacklightLight),
-    cv.GenerateID(CONF_BACKLIGHT_LIGHT_ID): cv.declare_id(light.LightState),
+    cv.Optional(CONF_BACKLIGHT, default={CONF_NAME: 'Display Backlight'}): BACKLIGHT_SCHEMA,
     cv.Optional(CONF_ON_CONNECTED): automation.validate_automation({
         cv.GenerateID(automation.CONF_TRIGGER_ID): cv.declare_id(ConnectedTrigger),
     }),
@@ -156,14 +172,8 @@ async def to_code(config):
     await uart.register_uart_device(var, config)
 
     # Create backlight light entity via proper ESPHome registration
-    backlight_output = cg.new_Pvariable(config[CONF_BACKLIGHT_OUTPUT_ID], var)
-    backlight_light = cg.new_Pvariable(config[CONF_BACKLIGHT_LIGHT_ID], backlight_output)
-    cg.add(backlight_light.set_name("Display Backlight"))
-    cg.add(backlight_light.set_object_id("display_backlight"))
-    cg.add(backlight_light.set_default_transition_length(0))
-    cg.add(backlight_light.set_restore_mode(light.LightRestoreMode.LIGHT_RESTORE_DEFAULT_ON))
-    await cg.register_component(backlight_light, {})
-    cg.add(cg.App.register_light(backlight_light))
+    await light.new_light(config[CONF_BACKLIGHT], var)
+    backlight_light = await cg.get_variable(config[CONF_BACKLIGHT][CONF_ID])
     cg.add(var.set_backlight_light(backlight_light))
 
     # Process sections
