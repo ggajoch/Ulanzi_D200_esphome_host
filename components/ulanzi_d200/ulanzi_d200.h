@@ -281,7 +281,7 @@ class UlanziBridge : public Component, public uart::UARTDevice {
 
   // Periodic ping for health monitoring
   uint32_t last_ping_time_{0};
-  static constexpr uint32_t PING_INTERVAL_MS = 30000;  // Ping every 30s
+  static constexpr uint32_t PING_INTERVAL_MS = 5000;  // Ping every 5s, inside CONNECTION_TIMEOUT_MS
 
   // Guard against duplicate send_all_section_configs_
   bool configs_sent_{false};
