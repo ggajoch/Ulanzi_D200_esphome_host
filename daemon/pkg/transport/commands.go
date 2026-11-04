@@ -60,6 +60,9 @@ var ModeChangeHandler func(mode string)
 // buttonID >= 0 marks a single button dirty; buttonID < 0 marks all buttons dirty.
 var DisplayDirtyHandler func(buttonID int)
 
+// RotationHandler is called when a set_rotation command is received (0, 90, 180 or 270)
+var RotationHandler func(deg int)
+
 // parseCommand parses NDJSON command protocol
 // Format: {"type":"command","module":"...","action":"...","params":[...]}
 func parseCommand(line string) (*Command, error) {
@@ -263,6 +266,19 @@ func handleDisplayCommand(action string, params []string) Response {
 			},
 		})
 		return Response{Status: "ok", Data: fmt.Sprintf("%d", pct)}
+	case "set_rotation":
+		// Params: <degrees>: how far the D200 is mounted turned clockwise from landscape
+		deg, err := -1, error(nil)
+		if len(params) >= 1 {
+			deg, err = strconv.Atoi(params[0])
+		}
+		if err != nil || (deg != 0 && deg != 90 && deg != 180 && deg != 270) {
+			return Response{Status: "error", Code: CODE_INVALID, Message: "Rotation must be 0, 90, 180 or 270"}
+		}
+		if RotationHandler != nil {
+			RotationHandler(deg)
+		}
+		return Response{Status: "ok"}
 	case "show_text":
 		if len(params) < 1 {
 			return Response{

@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"unsafe"
 )
 
 // SetPixel sets a single pixel with bounds checking.
@@ -11,6 +12,43 @@ func SetPixel(img *image.RGBA, x, y int, col color.RGBA) {
 	if x >= img.Rect.Min.X && x < img.Rect.Max.X && y >= img.Rect.Min.Y && y < img.Rect.Max.Y {
 		img.SetRGBA(x, y, col)
 	}
+}
+
+// RotateInto copies src, drawn upright for a viewer, into r of dst for a screen mounted turned
+// deg (0, 90, 180, 270) degrees clockwise. src is r's size, width and height swapped at 90 and 270.
+// Pixels outside dst are skipped.
+func RotateInto(dst *image.RGBA, r image.Rectangle, src *image.RGBA, deg int) {
+	w, h := r.Dx(), r.Dy()
+	c := r.Intersect(dst.Rect)
+	if c.Empty() {
+		return
+	}
+	// Whole pixels as uint32: per-byte slice access costs ~20 cycles a pixel on the RK3308's A35
+	d, s := pixels32(dst), pixels32(src)
+	for y := c.Min.Y; y < c.Max.Y; y++ {
+		// (lx, ly) on the screen is (sx, sy) for the viewer; each step right on the screen moves step pixels in src
+		lx, ly := c.Min.X-r.Min.X, y-r.Min.Y
+		sx, sy, step := lx, ly, 1
+		switch deg {
+		case 90:
+			sx, sy, step = h-1-ly, lx, src.Stride/4
+		case 180:
+			sx, sy, step = w-1-lx, h-1-ly, -1
+		case 270:
+			sx, sy, step = ly, w-1-lx, -src.Stride/4
+		}
+		si := src.PixOffset(sx, sy) / 4
+		row := d[dst.PixOffset(c.Min.X, y)/4 : dst.PixOffset(c.Max.X, y)/4]
+		for di := range row {
+			row[di] = s[si]
+			si += step
+		}
+	}
+}
+
+// pixels32 views an image's pixels as one uint32 each
+func pixels32(m *image.RGBA) []uint32 {
+	return unsafe.Slice((*uint32)(unsafe.Pointer(unsafe.SliceData(m.Pix))), len(m.Pix)/4)
 }
 
 // DrawHLine draws a horizontal line from x0 to x1 (inclusive) at y.

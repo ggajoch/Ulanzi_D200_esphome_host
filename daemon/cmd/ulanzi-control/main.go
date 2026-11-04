@@ -74,6 +74,87 @@ var dirtyAll int32
 // Persistent image buffer — allocated once, reused every frame
 var displayImg *image.RGBA
 
+// rotation is how far the D200 is mounted turned clockwise from landscape: 0, 90, 180 or 270.
+// Run mode draws upright for that viewer and numbers the keys in the viewer's reading order.
+var rotation atomic.Int32
+
+// tileCanvas holds one offscreen canvas per tile size; only the render goroutine uses it
+var tileCanvas = map[image.Point]*image.RGBA{}
+
+// keyOrder returns the physical key (landscape numbering) at each logical position: the 13
+// small keys in reading order for a viewer of a D200 turned rot degrees clockwise, then 13.
+func keyOrder(rot int) [14]int {
+	type key struct{ i, x, y int }
+	keys := make([]key, 13)
+	for i := range keys {
+		r := buttonRect(i)
+		x, y := r.Min.X+r.Dx()/2, r.Min.Y+r.Dy()/2
+		// The window centre in the viewer's frame (up to a shift): turned 90°, the left edge is on top
+		switch rot {
+		case 90:
+			x, y = -y, x
+		case 180:
+			x, y = -x, -y
+		case 270:
+			x, y = y, -x
+		}
+		keys[i] = key{i, x, y}
+	}
+	sort.Slice(keys, func(a, b int) bool {
+		if keys[a].y != keys[b].y {
+			return keys[a].y < keys[b].y
+		}
+		return keys[a].x < keys[b].x
+	})
+	var order [14]int
+	for n, k := range keys {
+		order[n] = k.i
+	}
+	order[13] = 13
+	return order
+}
+
+// logicalKey returns the logical position of physical key p
+func logicalKey(p int) int {
+	for i, k := range keyOrder(int(rotation.Load())) {
+		if k == p {
+			return i
+		}
+	}
+	return p
+}
+
+// tileSize is logical button i's size as the viewer sees it
+func tileSize(i, rot int) image.Point {
+	s := buttonRect(i).Size()
+	if rot == 90 || rot == 270 {
+		s.X, s.Y = s.Y, s.X
+	}
+	return s
+}
+
+// drawTile draws logical button i into its key window on img and returns the window.
+// The tile is drawn upright for the viewer in a canvas, then turned into the window.
+// Calibration and layout editing stay unrotated (physical numbering).
+func drawTile(img *image.RGBA, i int, m string) image.Rectangle {
+	rot := int(rotation.Load())
+	if rot == 0 || m != "run" {
+		rect := buttonRect(i)
+		drawButtonContent(img, i, rect, m)
+		return rect
+	}
+	size := tileSize(i, rot)
+	c, ok := tileCanvas[size]
+	if !ok {
+		c = image.NewRGBA(image.Rectangle{Max: size})
+		tileCanvas[size] = c
+	}
+	drawButtonContent(c, i, c.Rect, m)
+	rect := buttonRect(keyOrder(rot)[i])
+	ui.RotateInto(img, rect, c, rot)
+	return rect
+}
+
 // markButtonDirty marks a single button for redraw on the next tick.
 func markButtonDirty(id int) {
 	if id >= 0 && id < 14 {
@@ -256,6 +337,12 @@ func main() {
 			markButtonDirty(id)
 		}
 	}
+	transport.RotationHandler = func(deg int) {
+		if rotation.Swap(int32(deg)) != int32(deg) {
+			fmt.Printf("Rotation: %d\n", deg)
+			markAllDirty()
+		}
+	}
 
 	// Allocate persistent image buffer (reused every frame)
 	displayImg = image.NewRGBA(image.Rect(0, 0, LOG_WIDTH, LOG_HEIGHT))
@@ -388,7 +475,8 @@ func runControl(fb []byte, fIn *os.File) {
 				continue
 			}
 
-			// Run mode
+			// Run mode: the position the viewer sees this key at
+			idx = logicalKey(idx)
 			btn := state.GlobalStore.GetCurrentButton(idx)
 
 			if val == 1 { // Press
@@ -747,9 +835,7 @@ func rotateRect(fb []byte, img *image.RGBA, rect image.Rectangle) {
 
 // redrawButton performs a partial redraw for a single button.
 func redrawButton(fb []byte, i int) {
-	rect := buttonRect(i)
-	drawButtonContent(displayImg, i, rect, getMode())
-	rotateRect(fb, displayImg, rect)
+	rotateRect(fb, displayImg, drawTile(displayImg, i, getMode()))
 }
 
 func updateDisplay(fb []byte) {
@@ -769,8 +855,7 @@ func updateDisplay(fb []byte) {
 	}
 
 	for i := 0; i < 14; i++ {
-		rect := buttonRect(i)
-		drawButtonContent(img, i, rect, currentMode)
+		drawTile(img, i, currentMode)
 	}
 
 	src := img.Pix
@@ -810,49 +895,49 @@ func fbGeometry(fd uintptr) (xres, yres, bpp, stride int, err error) {
 	return int(v[0]), int(v[1]), int(v[6]), int(f.lineLength), nil
 }
 
-// drawSideBySide renders icon on the left half, text+text2 stacked on the right half.
+// drawSideBySide renders icon on the left half, text+text2 stacked on the right half;
+// in a tall canvas (the big key, turned) the icon on the top half, the text on the bottom half.
 func drawSideBySide(img *image.RGBA, rect image.Rectangle, s state.ButtonState, iconCol, textCol, text2Col color.RGBA) {
-	midX := rect.Min.X + rect.Dx()/2
+	cx := rect.Min.X + rect.Dx()/2
 	cy := rect.Min.Y + rect.Dy()/2
 
-	// Left half: icon centered
-	leftCX := rect.Min.X + rect.Dx()/4
-	if s.IconID != "" {
-		ui.DrawIcon(img, leftCX, cy, 150, s.IconID, iconCol)
-	}
-
-	// Right half: text stacked, inside a 10% margin
-	rightCX := midX + rect.Dx()/4
+	// Icon centered in its half; text stacked in the other half, inside a 10% margin
+	iconX, iconY, textX, textY := rect.Min.X+rect.Dx()/4, cy, cx+rect.Dx()/4, cy
 	maxW := rect.Dx()/2 - rect.Dy()/5
+	if rect.Dy() > rect.Dx() {
+		iconX, iconY, textX, textY = cx, rect.Min.Y+rect.Dy()/4, cx, cy+rect.Dy()/4
+		maxW = rect.Dx() * 8 / 10
+	}
+	if s.IconID != "" {
+		ui.DrawIcon(img, iconX, iconY, 150, s.IconID, iconCol)
+	}
 	if s.Text != "" && s.Text2 != "" {
-		ui.DrawText(img, rightCX, cy-26, ui.FitSize(s.Text, 48, maxW), s.Text, textCol)
-		ui.DrawText(img, rightCX, cy+34, ui.FitSize(s.Text2, 36, maxW), s.Text2, text2Col)
+		ui.DrawText(img, textX, textY-26, ui.FitSize(s.Text, 48, maxW), s.Text, textCol)
+		ui.DrawText(img, textX, textY+34, ui.FitSize(s.Text2, 36, maxW), s.Text2, text2Col)
 	} else if s.Text != "" {
-		ui.DrawText(img, rightCX, cy, ui.FitSize(s.Text, 52, maxW), s.Text, textCol)
+		ui.DrawText(img, textX, textY, ui.FitSize(s.Text, 52, maxW), s.Text, textCol)
 	}
 }
 
-// drawStatusBar renders status items (clock, page, etc.) in equal horizontal slots.
+// drawStatusBar renders status items (clock, page, etc.) in equal horizontal slots,
+// or stacked in equal vertical slots in a tall canvas (the big key, turned).
 func drawStatusBar(img *image.RGBA, rect image.Rectangle, s state.ButtonState, items []string, textCol color.RGBA) {
 	if len(items) == 0 {
 		items = []string{"clock", "page"}
 	}
 
 	slotW := rect.Dx() / len(items)
+	slotH := rect.Dy() / len(items)
+	tall := rect.Dy() > rect.Dx()
 	cy := rect.Min.Y + rect.Dy()/2
 	inset := rect.Dy() / 10 // 10% margin: the key windows' viewing angles are poor
 
 	for idx, item := range items {
-		slotCX := rect.Min.X + slotW*idx + slotW/2
-		// Each item: a 56 px icon at the slot's inner left edge, then left-aligned text up to the inner right edge
-		iconX := slotCX - slotW/2 + inset + 28
-		labelX := iconX + 34
-		labelW := slotCX + slotW/2 - inset - labelX
-
+		// Unknown item: s.Text or the item name, no icon
+		icon, txt, fit, size := "", s.Text, "", 24.0
 		switch item {
 		case "clock":
-			ui.DrawIcon(img, iconX, cy, 56, "clock-outline", textCol)
-			ui.DrawTextLeft(img, labelX, cy, ui.FitSize("00:00", 52, labelW), time.Now().Format("15:04"), textCol)
+			icon, txt, fit, size = "clock-outline", time.Now().Format("15:04"), "00:00", 52
 		case "page":
 			pages := state.GlobalStore.GetPagesList()
 			current := state.GlobalStore.CurrentPage
@@ -860,16 +945,36 @@ func drawStatusBar(img *image.RGBA, rect image.Rectangle, s state.ButtonState, i
 			if pageLabel == "" {
 				pageLabel = fmt.Sprintf("%d/%d", current+1, len(pages))
 			}
-			ui.DrawIcon(img, iconX, cy, 56, "book-open-page-variant-outline", textCol)
-			ui.DrawTextLeft(img, labelX, cy, ui.FitSize(pageLabel, 48, labelW), pageLabel, textCol)
+			icon, txt, fit, size = "book-open-page-variant-outline", pageLabel, pageLabel, 48
 		default:
-			// Unknown item: render s.Text or the item name
-			txt := s.Text
 			if txt == "" {
 				txt = item
 			}
-			ui.DrawText(img, slotCX, cy, 24, txt, textCol)
 		}
+
+		if tall {
+			// Each item: a 72 px icon over its centred text
+			cx, slotCY := rect.Min.X+rect.Dx()/2, rect.Min.Y+slotH*idx+slotH/2
+			if icon == "" {
+				ui.DrawText(img, cx, slotCY, size, txt, textCol)
+				continue
+			}
+			ui.DrawIcon(img, cx, slotCY-42, 72, icon, textCol)
+			ui.DrawText(img, cx, slotCY+40, ui.FitSize(fit, size, rect.Dx()*8/10), txt, textCol)
+			continue
+		}
+
+		slotCX := rect.Min.X + slotW*idx + slotW/2
+		if icon == "" {
+			ui.DrawText(img, slotCX, cy, size, txt, textCol)
+			continue
+		}
+		// Each item: a 56 px icon at the slot's inner left edge, then left-aligned text up to the inner right edge
+		iconX := slotCX - slotW/2 + inset + 28
+		labelX := iconX + 34
+		labelW := slotCX + slotW/2 - inset - labelX
+		ui.DrawIcon(img, iconX, cy, 56, icon, textCol)
+		ui.DrawTextLeft(img, labelX, cy, ui.FitSize(fit, size, labelW), txt, textCol)
 	}
 }
 
@@ -887,10 +992,17 @@ func drawChips(img *image.RGBA, rect image.Rectangle, s state.ButtonState) {
 	totalGap := gap * (len(chips) - 1)
 	chipW := (rect.Dx() - 16 - totalGap) / len(chips) // 8px padding each side
 	chipH := rect.Dy() - 16                            // 8px padding top/bottom
+	tall := rect.Dy() > rect.Dx()                      // the big key, turned: chips in a column
+	if tall {
+		chipW, chipH = rect.Dx()-16, (rect.Dy()-16-totalGap)/len(chips)
+	}
 
 	for idx, chip := range chips {
 		x0 := rect.Min.X + 8 + idx*(chipW+gap)
 		y0 := rect.Min.Y + 8
+		if tall {
+			x0, y0 = rect.Min.X+8, rect.Min.Y+8+idx*(chipH+gap)
+		}
 		chipRect := image.Rect(x0, y0, x0+chipW, y0+chipH)
 
 		bgCol := parseHexColor(chip.BgColor)
@@ -920,8 +1032,19 @@ func drawChips(img *image.RGBA, rect image.Rectangle, s state.ButtonState) {
 	}
 }
 
+// squareIn is the square in the middle of a tall rect (the big key, turned), else rect itself:
+// for widgets laid out for a key no taller than wide
+func squareIn(r image.Rectangle) image.Rectangle {
+	if d := r.Dy() - r.Dx(); d > 0 {
+		r.Min.Y += d / 2
+		r.Max.Y = r.Min.Y + r.Dx()
+	}
+	return r
+}
+
 // drawLineGraph renders a time-series line graph within a button rectangle.
 func drawLineGraph(img *image.RGBA, rect image.Rectangle, btn state.ButtonConfig, s state.ButtonState, textCol, text2Col color.RGBA) {
+	rect = squareIn(rect)
 	w := rect.Dx()
 	h := rect.Dy()
 
@@ -994,6 +1117,7 @@ func drawLineGraph(img *image.RGBA, rect image.Rectangle, btn state.ButtonConfig
 
 // drawGauge renders a gauge arc meter within a button rectangle.
 func drawGauge(img *image.RGBA, rect image.Rectangle, btn state.ButtonConfig, s state.ButtonState, iconCol, textCol, text2Col color.RGBA) {
+	rect = squareIn(rect)
 	w := rect.Dx()
 
 	// Arc color
@@ -1162,15 +1286,6 @@ func drawNotification(img *image.RGBA, rect image.Rectangle, btn state.ButtonCon
 	}
 }
 
-// notificationMessageWidth returns the available text width for the notification widget at button index.
-func notificationMessageWidth(btnIdx int) int {
-	w := layout.BtnW
-	if btnIdx == 13 {
-		w = 2*w + layout.GapX // double-wide button
-	}
-	return w - 30 // 15px padding each side
-}
-
 // updateNotificationScrolls updates vertical scroll offsets for notification widgets.
 // Text scrolls from top to bottom, pauses briefly, then restarts from the top.
 func updateNotificationScrolls() {
@@ -1183,12 +1298,13 @@ func updateNotificationScrolls() {
 		}
 
 		latest := btn.Notifications[len(btn.Notifications)-1]
-		messageW := notificationMessageWidth(btnID)
+		size := tileSize(btnID, int(rotation.Load()))
+		messageW := size.X - 30 // 15px padding each side, as drawNotification
 
 		fontSize := 24.0
 		lineHeight := 30
 		lines := ui.WrapText(latest.Message, fontSize, messageW)
-		visibleH := 240 - 100 // messageBottom - messageTop (approx)
+		visibleH := size.Y - 100 // messageBottom - messageTop in drawNotification
 		totalH := len(lines) * lineHeight
 
 		if totalH <= visibleH {
