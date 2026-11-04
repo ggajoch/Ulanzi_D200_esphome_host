@@ -89,9 +89,16 @@ func markDirty() {
 	markAllDirty()
 }
 
+// lastClock is the clock text the status bar was last marked dirty for
+var lastClock string
+
 // markAnimatedButtonsDirty marks specific buttons that need continuous redraws
 // (animated styles like "fast"/"slow", clock widget, scrolling notifications).
 func markAnimatedButtonsDirty() {
+	// The status bar's clock shows minutes: redraw it when the minute changes, not on every 50 ms tick
+	clock := time.Now().Format("15:04")
+	clockChanged := clock != lastClock
+	lastClock = clock
 	for i := 0; i < 14; i++ {
 		btn := state.GlobalStore.GetCurrentButton(i)
 		curr := btn.CurrentState
@@ -100,7 +107,7 @@ func markAnimatedButtonsDirty() {
 				markButtonDirty(i)
 			}
 		}
-		if btn.WideLayout == "status" || btn.WideLayout == "notification" {
+		if (btn.WideLayout == "status" && clockChanged) || btn.WideLayout == "notification" {
 			markButtonDirty(i)
 		}
 	}
