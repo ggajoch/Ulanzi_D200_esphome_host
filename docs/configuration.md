@@ -10,7 +10,7 @@ Add the external component to your ESPHome config:
 
 ```yaml
 external_components:
-  - source: github://<owner>/Ulanzi_D200_esphome_host
+  - source: github://ggajoch/Ulanzi_D200_esphome_host
     components: [ulanzi_d200]
 ```
 

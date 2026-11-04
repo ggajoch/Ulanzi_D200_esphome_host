@@ -70,7 +70,7 @@ external_components:
       path: ../../components
     components: [ulanzi_d200]
   # Or without a checkout of this repo:
-  # - source: github://<owner>/Ulanzi_D200_esphome_host
+  # - source: github://ggajoch/Ulanzi_D200_esphome_host
   #   components: [ulanzi_d200]
 
 packages:

@@ -42,7 +42,7 @@ Button 13 is double-wide (spans columns 3–4 in the last row) and is typically 
 
 ```yaml
 external_components:
-  - source: github://<owner>/Ulanzi_D200_esphome_host
+  - source: github://ggajoch/Ulanzi_D200_esphome_host
     components: [ulanzi_d200]
 ```
 
