@@ -679,17 +679,30 @@ func drawButtonContent(img *image.RGBA, i int, rect image.Rectangle, currentMode
 						ui.DrawText(img, cx, cy+26, t1(38), s.Text, textCol)
 						ui.DrawText(img, cx, cy+64, t2(32), s.Text2, text2Col)
 					} else if hasText1 {
-						ui.DrawIcon(img, cx, cy-24, 128, s.IconID, iconCol)
-						ui.DrawText(img, cx, cy+56, t1(44), s.Text, textCol)
+						// A label that would shrink wraps onto two lines; the icon makes room
+						if lines, sz := ui.WrapTwo(s.Text, 44, 40, maxW); len(lines) == 2 {
+							ui.DrawIcon(img, cx, cy-40, 92, s.IconID, iconCol)
+							ui.DrawText(img, cx, cy+24, sz, lines[0], textCol)
+							ui.DrawText(img, cx, cy+62, sz, lines[1], textCol)
+						} else {
+							ui.DrawIcon(img, cx, cy-24, 128, s.IconID, iconCol)
+							ui.DrawText(img, cx, cy+56, sz, s.Text, textCol)
+						}
 					} else {
-						ui.DrawIcon(img, cx, cy, 180, s.IconID, iconCol)
+						// Icon only: as large as the margin allows (glyphs fill ≤ 83% of the font size)
+						ui.DrawIcon(img, cx, cy, float64(maxW)*1.2, s.IconID, iconCol)
 					}
 				} else {
 					if hasText1 && hasText2 {
 						ui.DrawText(img, cx, cy-22, t1(44), s.Text, textCol)
 						ui.DrawText(img, cx, cy+34, t2(36), s.Text2, text2Col)
 					} else if hasText1 {
-						ui.DrawText(img, cx, cy, t1(52), s.Text, textCol)
+						if lines, sz := ui.WrapTwo(s.Text, 52, 48, maxW); len(lines) == 2 {
+							ui.DrawText(img, cx, cy-26, sz, lines[0], textCol)
+							ui.DrawText(img, cx, cy+26, sz, lines[1], textCol)
+						} else {
+							ui.DrawText(img, cx, cy, sz, s.Text, textCol)
+						}
 					}
 				}
 			}

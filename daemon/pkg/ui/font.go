@@ -214,6 +214,32 @@ func FitSize(text string, size float64, maxW int) float64 {
 	return size
 }
 
+// WrapTwo fits text into maxW: on one line at up to size1, or, when that would
+// shrink it and it has a space, on two lines at up to size2 if they come out larger.
+// The split is the space that gives the most even lines.
+func WrapTwo(text string, size1, size2 float64, maxW int) ([]string, float64) {
+	single := FitSize(text, size1, maxW)
+	if single == size1 || !strings.Contains(text, " ") {
+		return []string{text}, single
+	}
+	best, bestW := -1, 0
+	for i, r := range text {
+		if r != ' ' {
+			continue
+		}
+		w := max(MeasureTextWidth(text[:i], size2), MeasureTextWidth(text[i+1:], size2))
+		if best < 0 || w < bestW {
+			best, bestW = i, w
+		}
+	}
+	a, b := strings.TrimSpace(text[:best]), strings.TrimSpace(text[best+1:])
+	two := min(FitSize(a, size2, maxW), FitSize(b, size2, maxW))
+	if a == "" || b == "" || two <= single {
+		return []string{text}, single
+	}
+	return []string{a, b}, two
+}
+
 // DrawTextLeft draws text left-aligned (not centered).
 func DrawTextLeft(dst draw.Image, x, y int, size float64, text string, col color.Color) {
 	if txtFont == nil {
