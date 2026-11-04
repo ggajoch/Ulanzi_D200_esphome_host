@@ -97,7 +97,7 @@ ulanzi_d200 (1 per device)
 
 ### Go Daemon
 
-- `cmd/ulanzi-control/main.go` — Entry point. Framebuffer rendering (720x1280 @ 32bpp, geometry read from the fb ioctls), button input from `/dev/input/event0` (`struct input_event` size follows the architecture: 24 bytes on arm64). Default key map: the mainline kernel's KEY_F13–F24, KEY_PROG1/2; the stock firmware's codes need a `config/keymap.json` (calibration). Clock time zone: `TZ`, else `config/timezone` (Go tzdata is embedded; the image has none).
+- `cmd/ulanzi-control/main.go` — Entry point. Framebuffer rendering (720x1280 @ 32bpp, geometry read from the fb ioctls), button input from `/dev/input/event0` (`struct input_event` size follows the architecture: 24 bytes on arm64). Default key map holds both the mainline kernel's KEY_F13–F24, KEY_PROG1/2 and the stock firmware's codes (they don't overlap); `config/keymap.json` overrides. Clock time zone: `TZ`, else `config/timezone` (Go tzdata is embedded; the image has none).
 - `pkg/state/store.go` — Global state singleton. ButtonConfig/ButtonState management, RingBuffer for time-series data, thread-safe (RWMutex), state persistence to `config/state.json`.
 - `pkg/transport/commands.go` — NDJSON protocol implementation. Modules: `display`, `sensor`, `page`, `system`. Error codes: OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
 - `pkg/transport/serial.go` — Serial communication (1.5 Mbps); the port is `ULANZI_SERIAL`, default `/dev/ttyFIQ0`.
