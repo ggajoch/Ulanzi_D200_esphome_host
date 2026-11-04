@@ -10,7 +10,7 @@ Add the external component to your ESPHome config:
 
 ```yaml
 external_components:
-  - source: github://mapero/esphome-ulanzi-d200
+  - source: github://<owner>/Ulanzi_D200_esphome_host
     components: [ulanzi_d200]
 ```
 
@@ -25,6 +25,15 @@ uart:
   data_bits: 8
   parity: NONE
   stop_bits: 1
+```
+
+On the host variant (ESPHome on the D200 itself) the UART is one end of the socat pty pair:
+
+```yaml
+uart:
+  id: uart_bus
+  port: /run/d200-esp
+  baud_rate: 1500000
 ```
 
 ## Component Configuration
@@ -85,6 +94,7 @@ ulanzi_d200:
 |-----|------|----------|-------------|
 | `id` | ID | Yes | Component instance ID |
 | `uart_id` | ID | Yes | Reference to UART component |
+| `backlight` | light | No | The backlight light entity: any ESPHome light option. Default name `Display Backlight` |
 | `on_connected` | Automation | No | Fires when D200 connection is detected |
 | `on_disconnected` | Automation | No | Fires after 10 s with no UART data |
 | `on_section_press` | Automation | No | Fires on any section press. Variable: `position` (int) |
@@ -737,6 +747,15 @@ These methods are available on the component instance (accessed via `id(d200).me
 ### Display Backlight
 
 The component automatically registers a **brightness-only light entity** named `Display Backlight`. It appears in Home Assistant as a dimmable light (no color, brightness only). Restore mode is `RESTORE_DEFAULT_ON`.
+
+To change it, configure the light under `backlight:` with any ESPHome light option (`name`, `restore_mode`, `default_transition_length`, `gamma_correct`, ...):
+
+```yaml
+ulanzi_d200:
+  backlight:
+    name: "Backlight"
+    restore_mode: RESTORE_DEFAULT_OFF
+```
 
 No other entities are auto-created. All interactive entities (switches, buttons, sensors) are defined using standard ESPHome platform entities in your YAML.
 

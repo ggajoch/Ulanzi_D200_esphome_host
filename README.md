@@ -1,192 +1,103 @@
-# esphome-ulanzi-d200
+# Ulanzi_D200_esphome_host
 
-[![GitHub](https://img.shields.io/badge/GitHub-mapero%2Fesphome--ulanzi--d200-blue?logo=github)](https://github.com/mapero/esphome-ulanzi-d200)
+ESPHome running **on the Ulanzi D200 itself**: no ESP32, no soldering. The D200's Rockchip RK3308 runs
+open firmware (mainline Linux, [d200-buildroot](https://github.com/riptidewave93/d200-buildroot)), joins your WiFi
+through a USB dongle, and runs an ESPHome [`host`](https://esphome.io/components/host/) build (aarch64 Linux)
+that Home Assistant adopts like any other ESPHome device.
 
-ESPHome external component for the **Ulanzi D200** stream deck. Connects an ESP32 to the D200 display over UART and exposes a declarative YAML interface for building interactive dashboards.
+This is a fork of [mapero/esphome-ulanzi-d200](https://github.com/mapero/esphome-ulanzi-d200). It keeps its
+`ulanzi_d200` component and `ulanzi-control` daemon (with fixes for ESPHome 2026.10 and the mainline kernel), and adds
+the firmware and the host build. Upstream's ESP32 variant is kept: see [docs/component.md](docs/component.md).
 
-![Ulanzi D200 running with ESPHome](docs/images/esphome-ulanzi-d200.jpg)
+![The D200 running this config](examples/host/screenshots/d200-page0-zewnatrz.png)
 
-## What it does
+## Status
 
-The D200 is a physical stream deck with a 14-button capacitive grid (5×3 layout, button 13 is double-wide). An ESP32 bridges the D200 to Home Assistant over WiFi using this component.
-
-- Send display commands to the D200 over UART (1.5 Mbps NDJSON)
-- Define what each button shows using **sections**, **layouts**, and **widgets**
-- React to button presses and releases with ESPHome automations
-- Sync state bidirectionally with Home Assistant entities
-- Auto-expose a display brightness light and optional diagnostic sensors
-
-## Prerequisites
-
-The D200 requires hardware modification (soldering UART wires) and software changes (disabling the kernel console and stock application) before this component can be used. See the **[D200 Preparation Guide](docs/d200-preparation.md)** for step-by-step instructions.
+Works on the author's D200: ESPHome 2026.10.2 with the encrypted API, OTA updates, Home Assistant
+actions, two pages of keys. The daemon uses about 17.5 MB RSS and 2% of a core. Open issues and measurements:
+[docs/development-notes.md](docs/development-notes.md).
 
 ## Hardware
 
-- **Display controller:** Ulanzi D200 (RK3308, running Linux)
-- **Bridge MCU:** Any ESP32 with two free UART pins
-  - Tested: Seeed XIAO ESP32-C3
-- **Connection:** UART, 3.3 V logic, 1.5 Mbps
+- **Ulanzi D200** (RK3308H1/H3).
+- **USB-C hub with a USB-C PD input**, and a USB-C charger for it. Tested: Hiearcool UCN3273.
+- **MT7601U USB WiFi dongle** (`148f:7601`). An Ethernet adapter in the hub works too (tested: AX88179).
+
+The D200 has a single USB-C port, which is also its power input. This firmware turns it into a USB host port,
+and the D200 can't power a dongle from it. The hub fixes both: the charger on its PD input powers the hub, the dongle and,
+through the hub's upstream cable, the D200. Plug in charger → hub → D200, with the dongle in a USB-A port of the hub.
+
+Not every dongle works behind the RK3308's DWC2 host controller: the Atheros AR9271 (`ath9k_htc`) loads its
+firmware and then fails with `Failed to read SREV register`. The MT7601U runs at −41 dBm, 72 Mb/s.
+
+## Architecture
 
 ```
-Row 0:  [ 0] [ 1] [ 2] [ 3] [ 4]
-Row 1:  [ 5] [ 6] [ 7] [ 8] [ 9]
-Row 2:  [10] [11] [12] [13 ══════]
+                         WiFi (MT7601U) or Ethernet
+  Home Assistant  ◀──────────────────────────────────▶  ESPHome host build          /data/esphome/d200
+  (ESPHome integration)    API :6053, OTA :8082           + ulanzi_d200 component
+                                                                │ NDJSON, 1.5 Mbaud "UART"
+                                                                ▼
+                                       /run/d200-esp ⇄ socat pty pair ⇄ /run/d200-daemon
+                                                                                │
+                                                                                ▼
+                                                            ulanzi-control (Go)  /data/ulanzi-control
+                                                              ├──▶ /dev/fb0            720x1280 display
+                                                              ├◀── /dev/input/event0   14 keys
+                                                              └──▶ /sys/class/backlight
 ```
 
-Button 13 is double-wide (spans columns 3–4 in the last row) and is typically used for the status bar.
+`S70esphome` (in the firmware) starts socat, the daemon and ESPHome. ESPHome owns the logic and the Home Assistant
+connection; the daemon draws the keys and reports presses. They speak the same NDJSON protocol as upstream's ESP32
+and D200 over a real UART.
 
-## Quick Start
+## Quick start
 
-1. **Add the external component** to your ESPHome config:
+1. **Build and flash the firmware**: [buildroot/README.md](buildroot/README.md).
+2. **First setup over USB**: on first boot the D200 is a USB device with SSH over USB. Give it your WiFi
+   credentials and switch the port to host mode as described in [buildroot/README.md](buildroot/README.md). Then
+   power it through the hub, with the dongle in the hub.
+3. **Build and install ESPHome** (Linux or WSL, using the toolchain from the firmware build):
+   ```sh
+   examples/host/build.sh                 # first time: copy the binaries by hand,
+                                          # see examples/host/README.md
+   DEVICE=<D200 IP> examples/host/deploy.sh   # afterwards: compile + OTA
+   ```
+   The first build writes a random API key to `examples/host/secrets.yaml` (git-ignored).
+4. **Add it to Home Assistant**: Settings → Devices & services → ESPHome. The device is discovered over mDNS, or
+   add it by IP. Enter the `api_encryption_key` from `examples/host/secrets.yaml`. Then, on the device's
+   integration entry, Configure → enable **"Allow the device to perform Home Assistant actions"**, or the keys
+   can show states but not switch anything.
 
-```yaml
-external_components:
-  - source: github://mapero/esphome-ulanzi-d200
-    components: [ulanzi_d200]
-```
+## Changing the UI
 
-2. **Configure UART** (adjust pins for your board):
+Edit [`examples/host/d200.yaml`](examples/host/d200.yaml): the Home Assistant entities and labels are the
+`substitutions:` at the top, and each key is a `section` (concepts: [docs/component.md](docs/component.md), every
+option: [docs/configuration.md](docs/configuration.md)). Then run `DEVICE=<D200 IP> examples/host/deploy.sh`: it
+compiles and uploads by OTA, and ESPHome restarts with the new layout a few seconds later. UI changes never need a
+firmware or daemon update.
 
-```yaml
-uart:
-  id: uart_bus
-  tx_pin: GPIO21
-  rx_pin: GPIO20
-  baud_rate: 1500000
-  data_bits: 8
-  parity: NONE
-  stop_bits: 1
-```
-
-3. **Define sections:**
-
-```yaml
-ulanzi_d200:
-  id: d200
-  uart_id: uart_bus
-
-  on_connected:
-    then:
-      - lambda: id(d200).set_brightness(80);
-
-  sections:
-    - position: 0
-      page: 0
-      on_press:
-        then:
-          - switch.toggle: sw_light
-      layouts:
-        - widget: entity_view
-          when: !lambda 'return id(sw_light).state;'
-          color: "#FFAA00"
-          icon_id: "ceiling-light"
-          text: "ON"
-          text2: "Living Room"
-        - widget: entity_view
-          color: "#333333"
-          icon_id: "ceiling-light-outline"
-          text: "OFF"
-          text2: "Living Room"
-
-    - position: 13
-      page: -1
-      layouts:
-        - widget: status
-          items: [clock, page]
-          color: "#111122"
-          text_color: "#AACCFF"
-```
-
-See [`examples/basic.yaml`](examples/basic.yaml) for a complete working configuration.
-
-## Concepts
-
-### Sections
-
-A **section** maps to a physical button position (0–13). Each section can be assigned to a specific page (`page: 0`, `page: 1`, …) or shown on all pages (`page: -1`). Sections emit `on_press` and `on_release` events for automations.
-
-### Layouts
-
-Each section has one or more **layouts**. The component evaluates layout conditions (`when: !lambda ...`) every second and displays the first matching layout. A layout without `when` is always shown (use as fallback). This enables toggle and state-driven display without extra glue code.
-
-### Widgets
-
-Each layout uses a **widget type** that determines how it renders:
-
-| Widget | Description |
-|--------|-------------|
-| `entity_view` | Standard button: icon + primary text + secondary text |
-| `gauge` | Circular gauge with value history |
-| `line_graph` | Line graph with scrolling value history |
-| `status` | Status bar with clock, page indicator (for pos 13) |
-| `chips` | Compact chip row (for pos 13) |
-| `notification` | Push notification receiver (HA service integration) |
-
-All string properties (`text`, `color`, `icon_id`, …) accept either a static string or a `!lambda` returning `optional<std::string>`, evaluated every second.
-
-### Pages
-
-Pages group sections into logical screens. Navigate between them using `navigate_page_next()`, `navigate_page_prev()`, or `navigate_page_jump(n)`. Use `page: -1` for buttons that should always be visible (navigation bar, status bar).
-
-### HA State Sync
-
-The recommended pattern for toggle buttons:
-
-```yaml
-# ESPHome switch calls HA service (optimistic, updates immediately)
-switch:
-  - platform: template
-    id: sw_light
-    optimistic: true
-    turn_on_action:
-      - homeassistant.service: {service: light.turn_on, data: {entity_id: light.living_room}}
-    turn_off_action:
-      - homeassistant.service: {service: light.turn_off, data: {entity_id: light.living_room}}
-
-# HA binary_sensor syncs real state back to the switch
-binary_sensor:
-  - platform: homeassistant
-    entity_id: light.living_room
-    trigger_on_initial_state: true
-    on_state:
-      then:
-        - lambda: if (x) id(sw_light).turn_on(); else id(sw_light).turn_off();
-```
-
-## Examples
-
-| File | Description |
-|------|-------------|
-| [`examples/basic.yaml`](examples/basic.yaml) | Two-page setup: toggle switches, momentary buttons, page navigation, HA state sync |
-| [`examples/sensors.yaml`](examples/sensors.yaml) | Two-page sensor dashboard: gauges, line graphs, chips, conditional widget switching |
-
-Copy `examples/secrets.yaml.example` to `examples/secrets.yaml` and fill in your credentials before flashing.
-
-## Configuration Reference
-
-Full documentation: [docs/configuration.md](docs/configuration.md)
-
-## Repository Layout
+## Repository layout
 
 ```
-components/
-  ulanzi_d200/
-    __init__.py         ESPHome component definition (schema + codegen)
-    ulanzi_d200.h       C++ class declaration
-    ulanzi_d200.cpp     C++ implementation
-daemon/
-  cmd/ulanzi-control/   Go daemon binary (runs on the D200, ARMv7 Linux)
-  pkg/                  Internal packages (state, transport, ui)
-  deploy/               Init script and wrapper for deployment via ADB
-  go.mod / go.sum
-docs/
-  configuration.md      Full configuration reference
-examples/
-  basic.yaml            Toggle/button/navigation example
-  sensors.yaml          Sensor dashboard example
-  secrets.yaml.example  Template for secrets.yaml
+buildroot/              firmware: patches for d200-buildroot, build.sh, README (GPL-2.0-or-later)
+components/ulanzi_d200/ ESPHome component (both variants)
+daemon/                 ulanzi-control, the Go daemon on the D200 (display, keys, backlight)
+examples/host/          host variant: d200.yaml, build.sh, deploy.sh
+examples/*.yaml         ESP32 variant examples (upstream)
+docs/                   component.md (upstream README), configuration.md, development-notes.md,
+                        d200-preparation.md (ESP32 variant)
+firmware/, install.*    ESP32 variant on the stock firmware: patched boot image, daemon installer (upstream)
 ```
 
-## License
+## Credits and licences
 
-MIT
+- [mapero/esphome-ulanzi-d200](https://github.com/mapero/esphome-ulanzi-d200) by Jochen Scheib: the
+  `ulanzi_d200` component, the `ulanzi-control` daemon and most of `docs/`. MIT.
+- [riptidewave93/d200-buildroot](https://github.com/riptidewave93/d200-buildroot): open firmware for the D200,
+  which `buildroot/` patches. GPL-2.0-or-later.
+- [debauer/D200-Unchained](https://github.com/debauer/D200-Unchained): D200 hardware notes.
+- [ESPHome](https://esphome.io): the host platform. MIT (Python code) and GPL-3.0 (C++ runtime).
+
+Everything in this repository except `buildroot/` is under the MIT licence in [LICENSE](LICENSE).
+`buildroot/` is GPL-2.0-or-later, like the Buildroot tree it patches.
