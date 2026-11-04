@@ -1,7 +1,7 @@
 From 17d3f32216838382536e8572e5229b47b329c170 Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:02 +0100
-Subject: [PATCH 4/9] feat(display): /dev/fb0 through DRM fbdev emulation
+Subject: [PATCH 4/8] feat(display): /dev/fb0 through DRM fbdev emulation
 
 For programs that draw to a framebuffer device: 720x1280, 32 bpp. No
 framebuffer console. deckd keeps using DRM.

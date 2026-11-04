@@ -1,7 +1,7 @@
 From dafce5ac4c3951ca06a3450280acfd03e68f744a Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:01 +0100
-Subject: [PATCH 3/9] feat(net): USB Ethernet adapters in host mode
+Subject: [PATCH 3/8] feat(net): USB Ethernet adapters in host mode
 
 - Linux: usbnet with AX88179, CDC Ethernet, CDC NCM, and RTL8152/8153.
 - S31eth-dhcp: udhcpc on each eth* that appears in the first 30 s.

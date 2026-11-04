@@ -1,7 +1,7 @@
-From 57248acdaeea3148f9271d77faf2f1777083c031 Mon Sep 17 00:00:00 2001
+From 1611446be10876b739d17b8d3a4c01e331e03827 Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
-Date: Wed, 4 Nov 2026 04:36:02 +0100
-Subject: [PATCH 9/9] docs: ESPHome build
+Date: Wed, 4 Nov 2026 05:50:58 +0100
+Subject: [PATCH 8/8] docs: ESPHome build
 
 docs/esphome.md: hardware, USB modes and the way back to device mode, setup
 over USB, ESPHome and the display daemon, SSH, NTP, boot order, logs,
@@ -9,16 +9,16 @@ debugging, firmware sources and licences.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- docs/esphome.md | 204 ++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 204 insertions(+)
+ docs/esphome.md | 196 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 196 insertions(+)
  create mode 100644 docs/esphome.md
 
 diff --git a/docs/esphome.md b/docs/esphome.md
 new file mode 100644
-index 0000000..d1fb9ba
+index 0000000..7e4982e
 --- /dev/null
 +++ b/docs/esphome.md
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,196 @@
 +# ESPHome test build
 +
 +A test build: the D200 joins WiFi through a USB WiFi dongle on its USB-C port and runs an ESPHome `host` platform
@@ -65,11 +65,7 @@ index 0000000..d1fb9ba
 +In USB device mode (the first boot after an install, or after `fw_setenv usb_mode device`), with the D200 on the PC;
 +`d200-<serial>.local` is its USB Ethernet name ([linux.md](linux.md#usb)):
 +
-+1. Your SSH key: in host mode SSH takes keys only ([SSH](#ssh)).
-+   ```bash
-+   ssh root@d200-<serial>.local 'mkdir -p -m 700 /data/ssh; cat >> /data/ssh/authorized_keys' < ~/.ssh/id_ed25519.pub
-+   ```
-+2. WiFi (WPA2-PSK):
++1. WiFi (WPA2-PSK):
 +   ```bash
 +   ssh root@d200-<serial>.local 'umask 077; cat > /data/wpa_supplicant.conf' <<'EOF'
 +   ctrl_interface=/var/run/wpa_supplicant
@@ -79,8 +75,8 @@ index 0000000..d1fb9ba
 +   }
 +   EOF
 +   ```
-+3. ESPHome, and optionally the display daemon: [2. ESPHome](#2-esphome).
-+4. Host mode: `ssh root@d200-<serial>.local fw_setenv usb_mode host`. Then unplug the D200 from the PC and plug it
++2. ESPHome, and optionally the display daemon: [2. ESPHome](#2-esphome).
++3. Host mode: `ssh root@d200-<serial>.local fw_setenv usb_mode host`. Then unplug the D200 from the PC and plug it
 +   into the hub, with the charger and the dongle on the hub.
 +
 +In host mode `S32wifi` waits up to 30 s for `wlan0`, then runs `wpa_supplicant` and `udhcpc`, which sends the hostname
@@ -133,12 +129,8 @@ index 0000000..d1fb9ba
 +
 +## SSH
 +
-+| USB mode | Logins |
-+|---|---|
-+| `device` | root without a password over USB Ethernet (the only network then), or with a key |
-+| `host` | Only keys in `/data/ssh/authorized_keys`, over WiFi and Ethernet. Without the file nobody can log in, and syslog says so |
-+
-+The UART console is a root shell in both modes.
++**root has no password**, over USB Ethernet and over the network (WiFi, Ethernet adapters): anyone on the same
++network can log in as root. Put the D200 on a trusted LAN only. The UART console is a root shell as well.
 +
 +## Clock
 +
@@ -158,7 +150,7 @@ index 0000000..d1fb9ba
 +| `S32wifi` | Waits up to 30 s for `wlan0`, then `wpa_supplicant` and `udhcpc` |
 +| `S33wifi-diag` | Saves the [logs](#4-logs) for 3 minutes |
 +| `S40ntpd` | Sets the clock over NTP once the network is up ([Clock](#clock)) |
-+| `S50dropbear` | SSH, keys only ([SSH](#ssh)) |
++| `S50dropbear` | SSH: root without a password ([SSH](#ssh)) |
 +| `S60deckd` | Starts the key app |
 +| `S70esphome` | If `/data/esphome/d200` exists: stops deckd (after it confirmed a pending update), runs ESPHome, and with a display daemon socat and the daemon first |
 +

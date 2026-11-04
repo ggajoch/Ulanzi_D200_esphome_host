@@ -1,7 +1,7 @@
 From 98e57311e2158e4068b1c5c7452ca7f6ad280998 Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:02 +0100
-Subject: [PATCH 7/9] feat(ntp): set the clock over NTP
+Subject: [PATCH 7/8] feat(ntp): set the clock over NTP
 
 BusyBox ntpd, supervised by S40ntpd, from pool.ntp.org or the servers in
 /data/ntp.conf. It retries until the network is up; until then the clock is

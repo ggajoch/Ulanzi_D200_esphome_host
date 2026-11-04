@@ -1,7 +1,7 @@
 From df0b4bdd1ad9f23a93cd4d9a911d46090dbebe4a Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:02 +0100
-Subject: [PATCH 5/9] feat(esphome): run ESPHome instead of deckd when it's
+Subject: [PATCH 5/8] feat(esphome): run ESPHome instead of deckd when it's
  installed
 
 S70esphome: if /data/esphome/d200 (an ESPHome host-platform build) exists,

@@ -1,7 +1,7 @@
 From 384bb17c3da1cc535a3ea4edaa72c881559581de Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:02 +0100
-Subject: [PATCH 6/9] feat(debug): USB and WiFi debug tools
+Subject: [PATCH 6/8] feat(debug): USB and WiFi debug tools
 
 - Linux: debugfs, usbmon, dynamic debug, ath debugging and ath9k_htc
   debugfs. A patch makes the ath9k_htc debug mask writable at runtime, as the

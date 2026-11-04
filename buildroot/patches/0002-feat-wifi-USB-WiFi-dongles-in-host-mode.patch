@@ -1,7 +1,7 @@
 From 993781ed7bfbefcb11ebead503209fc65da3ad6f Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:01 +0100
-Subject: [PATCH 2/9] feat(wifi): USB WiFi dongles in host mode
+Subject: [PATCH 2/8] feat(wifi): USB WiFi dongles in host mode
 
 - Linux: cfg80211, mac80211, ath9k_htc (AR9271) and mt7601u. Their firmware
   and regulatory.db are built into the kernel from board/ulanzi/d200/firmware

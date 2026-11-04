@@ -14,10 +14,12 @@ that let the D200 run an ESPHome `host` build on WiFi. They apply to the commit 
 | `0005` ESPHome | `S70esphome`: runs `/data/esphome/d200` instead of the stock key app, optionally with a display daemon over a `socat` pty pair; mDNS `_esphomelib._tcp` |
 | `0006` Debugging | debugfs, usbmon, dynamic debug, `lsusb`, `usbreset`, boot logs in `/data/wifi-test/` |
 | `0007` NTP | BusyBox `ntpd`; servers from `/data/ntp.conf`, default `pool.ntp.org` |
-| `0008` SSH | In USB host mode SSH takes keys only, from `/data/ssh/authorized_keys` |
-| `0009` Docs | `docs/esphome.md` in the patched tree: setup, USB modes, logs, debugging |
+| `0008` Docs | `docs/esphome.md` in the patched tree: setup, USB modes, logs, debugging |
 
 The device side is described in `docs/esphome.md` of the patched tree; the rest of the firmware in its `docs/`.
+
+**SSH:** root has no password, over USB and over the network (WiFi, Ethernet), as in d200-buildroot's debug
+builds. Anyone on the same network can log in as root: put the D200 on a trusted LAN only.
 
 ## Build
 
@@ -59,10 +61,10 @@ This erases the D200 and installs the build (d200-buildroot's `docs/install.md`,
    `--auto-attach` pick it up, then run `d200-install.py` again: it notices that the flash loader is already running,
    erases and writes. The D200 then restarts into the new firmware.
 4. **Set up over USB.** The first boot is a USB device: the PC gets a USB network interface, and the D200 is
-   `d200-<serial>.local`. Over SSH (root, no password in this mode), add your SSH key to `/data/ssh/authorized_keys`,
-   the WiFi network to `/data/wpa_supplicant.conf` and the ESPHome build to `/data/esphome/d200`
-   (`docs/esphome.md` has the commands). Then `fw_setenv usb_mode host`, unplug the D200 from the PC and plug it into
-   a powered USB-C hub, with the WiFi dongle on the hub. From then on it's on WiFi, with SSH by key only.
+   `d200-<serial>.local`. Over SSH (root, no password), add the WiFi network to `/data/wpa_supplicant.conf` and the
+   ESPHome build to `/data/esphome/d200` (`docs/esphome.md` has the commands). Then `fw_setenv usb_mode host`,
+   unplug the D200 from the PC and plug it into a powered USB-C hub, with the WiFi dongle on the hub. From then on
+   it's on WiFi, with the same SSH login.
 
 ## Updates
 

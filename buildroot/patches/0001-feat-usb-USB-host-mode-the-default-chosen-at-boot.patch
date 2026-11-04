@@ -1,7 +1,7 @@
 From df4a10111de2005f9f7ea216343ebe52781a7410 Mon Sep 17 00:00:00 2001
 From: Grzegorz Gajoch <gajoch@gmail.com>
 Date: Wed, 4 Nov 2026 04:36:01 +0100
-Subject: [PATCH 1/9] feat(usb): USB host mode, the default, chosen at boot
+Subject: [PATCH 1/8] feat(usb): USB host mode, the default, chosen at boot
 
 The USB-C port can be a USB host, for a hub with a WiFi dongle or an Ethernet
 adapter. The board can't supply VBUS; it comes from a powered hub.
