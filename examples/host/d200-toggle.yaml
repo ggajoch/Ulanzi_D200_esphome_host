@@ -54,13 +54,9 @@ ulanzi_d200:
           icon_color: "${text_color_on}"
           text: "${label}"
           text_color: "${text_color_on}"
-          text2: "ON"
-          text2_color: "${text_color_on}"
         - widget: entity_view
           color: "#222222"
           icon_id: "${icon_off}"
           icon_color: "#777777"
           text: "${label}"
           text_color: "#BBBBBB"
-          text2: "OFF"
-          text2_color: "#777777"

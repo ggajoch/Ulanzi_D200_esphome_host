@@ -123,16 +123,12 @@ ulanzi_d200:
           icon_color: "#000000"
           text: "Wszystkie"
           text_color: "#000000"
-          text2: "ON"
-          text2_color: "#000000"
         - widget: entity_view
           color: "#222222"
           icon_id: "lightbulb-group-off"
           icon_color: "#777777"
           text: "Wszystkie"
           text_color: "#BBBBBB"
-          text2: "OFF"
-          text2_color: "#777777"
 
     # ===== Page 1: Warsztat =====
     # 1: compressor, toggles only after a 1 s hold (released earlier: nothing happens)
@@ -146,7 +142,6 @@ ulanzi_d200:
           - script.stop: compressor_hold
       pressed_style:
         color: "#666666"
-        text2_color: "#FFFFFF"
       layouts:
         - widget: entity_view
           when: !lambda 'return id(sw_compressor).state;'
@@ -155,16 +150,12 @@ ulanzi_d200:
           icon_color: "#FFFFFF"
           text: "${compressor_name}"
           text_color: "#FFFFFF"
-          text2: "ON (trzymaj)"
-          text2_color: "#FFFFFF"
         - widget: entity_view
           color: "#222222"
           icon_id: "air-filter"
           icon_color: "#777777"
           text: "${compressor_name}"
           text_color: "#BBBBBB"
-          text2: "OFF (trzymaj)"
-          text2_color: "#777777"
 
     # ===== All pages: navigation and status =====
     - position: 4

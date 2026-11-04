@@ -206,6 +206,14 @@ func MeasureTextWidth(text string, size float64) int {
 	return d.MeasureString(text).Ceil()
 }
 
+// FitSize returns size, shrunk until text is at most maxW pixels wide (not below 18).
+func FitSize(text string, size float64, maxW int) float64 {
+	for size > 18 && MeasureTextWidth(text, size) > maxW {
+		size -= 2
+	}
+	return size
+}
+
 // DrawTextLeft draws text left-aligned (not centered).
 func DrawTextLeft(dst draw.Image, x, y int, size float64, text string, col color.Color) {
 	if txtFont == nil {

@@ -666,24 +666,29 @@ func drawButtonContent(img *image.RGBA, i int, rect image.Rectangle, currentMode
 				hasIcon := s.IconID != ""
 				hasText1 := s.Text != ""
 				hasText2 := s.Text2 != ""
+				// Large enough to read from a distance; long labels shrink to the key's width
+				maxW := rect.Dx() - 12
+				t1 := func(size float64) float64 { return ui.FitSize(s.Text, size, maxW) }
+				t2 := func(size float64) float64 { return ui.FitSize(s.Text2, size, maxW) }
 
+				// MDI glyphs fill 65-85% of their font size; these fill a ~196 px key window
 				if hasIcon {
 					if hasText1 && hasText2 {
-						ui.DrawIcon(img, cx, cy-30, 48, s.IconID, iconCol)
-						ui.DrawText(img, cx, cy+18, 28, s.Text, textCol)
-						ui.DrawText(img, cx, rect.Min.Y+156, 28, s.Text2, text2Col)
+						ui.DrawIcon(img, cx, cy-50, 116, s.IconID, iconCol)
+						ui.DrawText(img, cx, cy+22, t1(44), s.Text, textCol)
+						ui.DrawText(img, cx, cy+70, t2(34), s.Text2, text2Col)
 					} else if hasText1 {
-						ui.DrawIcon(img, cx, cy-30, 48, s.IconID, iconCol)
-						ui.DrawText(img, cx, cy+18, 28, s.Text, textCol)
+						ui.DrawIcon(img, cx, cy-34, 146, s.IconID, iconCol)
+						ui.DrawText(img, cx, cy+62, t1(54), s.Text, textCol)
 					} else {
-						ui.DrawIcon(img, cx, cy, 80, s.IconID, iconCol)
+						ui.DrawIcon(img, cx, cy, 180, s.IconID, iconCol)
 					}
 				} else {
 					if hasText1 && hasText2 {
-						ui.DrawText(img, cx, cy, 28, s.Text, textCol)
-						ui.DrawText(img, cx, rect.Min.Y+156, 28, s.Text2, text2Col)
+						ui.DrawText(img, cx, cy-24, t1(48), s.Text, textCol)
+						ui.DrawText(img, cx, cy+40, t2(40), s.Text2, text2Col)
 					} else if hasText1 {
-						ui.DrawText(img, cx, cy, 32, s.Text, textCol)
+						ui.DrawText(img, cx, cy, t1(56), s.Text, textCol)
 					}
 				}
 			}
@@ -799,16 +804,17 @@ func drawSideBySide(img *image.RGBA, rect image.Rectangle, s state.ButtonState, 
 	// Left half: icon centered
 	leftCX := rect.Min.X + rect.Dx()/4
 	if s.IconID != "" {
-		ui.DrawIcon(img, leftCX, cy, 72, s.IconID, iconCol)
+		ui.DrawIcon(img, leftCX, cy, 170, s.IconID, iconCol)
 	}
 
 	// Right half: text stacked
 	rightCX := midX + rect.Dx()/4
+	maxW := rect.Dx()/2 - 12
 	if s.Text != "" && s.Text2 != "" {
-		ui.DrawText(img, rightCX, cy-16, 28, s.Text, textCol)
-		ui.DrawText(img, rightCX, cy+20, 20, s.Text2, text2Col)
+		ui.DrawText(img, rightCX, cy-26, ui.FitSize(s.Text, 48, maxW), s.Text, textCol)
+		ui.DrawText(img, rightCX, cy+34, ui.FitSize(s.Text2, 36, maxW), s.Text2, text2Col)
 	} else if s.Text != "" {
-		ui.DrawText(img, rightCX, cy, 28, s.Text, textCol)
+		ui.DrawText(img, rightCX, cy, ui.FitSize(s.Text, 52, maxW), s.Text, textCol)
 	}
 }
 
@@ -826,8 +832,8 @@ func drawStatusBar(img *image.RGBA, rect image.Rectangle, s state.ButtonState, i
 
 		switch item {
 		case "clock":
-			ui.DrawIcon(img, slotCX-40, cy, 36, "clock-outline", textCol)
-			ui.DrawText(img, slotCX+20, cy, 28, time.Now().Format("15:04"), textCol)
+			ui.DrawIcon(img, slotCX-72, cy, 64, "clock-outline", textCol)
+			ui.DrawText(img, slotCX+30, cy, ui.FitSize("00:00", 56, slotW-110), time.Now().Format("15:04"), textCol)
 		case "page":
 			pages := state.GlobalStore.GetPagesList()
 			current := state.GlobalStore.CurrentPage
@@ -835,9 +841,10 @@ func drawStatusBar(img *image.RGBA, rect image.Rectangle, s state.ButtonState, i
 			if pageLabel == "" {
 				pageLabel = fmt.Sprintf("%d/%d", current+1, len(pages))
 			}
-			ui.DrawIcon(img, slotCX-35, cy, 36, "book-open-page-variant-outline", textCol)
+			ui.DrawIcon(img, slotCX-slotW/2+34, cy, 64, "book-open-page-variant-outline", textCol)
 			// Start right of the icon: a centred label longer than ~4 characters ran over it
-			ui.DrawTextLeft(img, slotCX-10, cy, 28, pageLabel, textCol)
+			labelX := slotCX - slotW/2 + 66
+			ui.DrawTextLeft(img, labelX, cy, ui.FitSize(pageLabel, 48, slotCX+slotW/2-8-labelX), pageLabel, textCol)
 		default:
 			// Unknown item: render s.Text or the item name
 			txt := s.Text
