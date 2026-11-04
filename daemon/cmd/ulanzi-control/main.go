@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the device has no zoneinfo; LoadLocation and TZ fall back to this
 	"unsafe"
 
 	"ulanzi-d200/pkg/state"
@@ -28,6 +29,7 @@ const (
 	INPUT_DEV   = "/dev/input/event0"
 	KEYMAP_FILE = "config/keymap.json"
 	LAYOUT_FILE = "config/layout.json"
+	TIMEZONE_FILE = "config/timezone"
 	LOG_WIDTH   = 1280
 	LOG_HEIGHT  = 720
 )
@@ -220,6 +222,11 @@ func handlePageNavigation(btn state.ButtonConfig) bool {
 }
 
 func main() {
+	// The clock's time zone: TZ, else config/timezone (e.g. Europe/Warsaw), else UTC.
+	// Set before anything reads the local time; Go loads it once, on first use.
+	if tz, err := os.ReadFile(TIMEZONE_FILE); err == nil && os.Getenv("TZ") == "" {
+		os.Setenv("TZ", strings.TrimSpace(string(tz)))
+	}
 	mode = "run"
 
 	if err := os.MkdirAll("config", 0755); err != nil {
