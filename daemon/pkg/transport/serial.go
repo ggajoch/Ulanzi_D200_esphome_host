@@ -2,9 +2,11 @@ package transport
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -12,7 +14,8 @@ import (
 )
 
 // Config
-const SERIAL_PORT = "/dev/ttyFIQ0"
+// ULANZI_SERIAL overrides the port, e.g. a pty end shared with ESPHome on the device itself
+var SERIAL_PORT = cmp.Or(os.Getenv("ULANZI_SERIAL"), "/dev/ttyFIQ0")
 const BAUD_RATE = 1500000 // Rockchip standard
 
 type Message struct {

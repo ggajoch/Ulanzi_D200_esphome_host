@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"ulanzi-d200/pkg/state"
 	"ulanzi-d200/pkg/transport"
@@ -25,9 +26,6 @@ import (
 const (
 	FB_DEVICE   = "/dev/fb0"
 	INPUT_DEV   = "/dev/input/event0"
-	WIDTH       = 720
-	HEIGHT      = 1280
-	BPP         = 4
 	KEYMAP_FILE = "config/keymap.json"
 	LAYOUT_FILE = "config/layout.json"
 	LOG_WIDTH   = 1280
@@ -35,6 +33,9 @@ const (
 )
 
 var keyMap = map[uint16]int{}
+
+// fbStride is the framebuffer's line length in bytes, read from the driver
+var fbStride int
 
 type KeyMapJSON struct {
 	Keys []int `json:"keys"`
@@ -247,7 +248,15 @@ func main() {
 
 	fFb, err := os.OpenFile(FB_DEVICE, os.O_RDWR, 0)
 	if err != nil { panic(err) }
-	size := WIDTH * HEIGHT * BPP
+	xres, yres, bpp, stride, err := fbGeometry(fFb.Fd())
+	if err != nil { panic(err) }
+	fmt.Printf("Framebuffer %dx%d, %d bpp, stride %d\n", xres, yres, bpp, stride)
+	// The portrait panel is mounted rotated: the 1280x720 image is drawn turned into a 720x1280 XRGB8888 buffer
+	if xres < LOG_HEIGHT || yres < LOG_WIDTH || bpp != 32 {
+		panic(fmt.Sprintf("framebuffer %dx%d %d bpp, need at least %dx%d at 32 bpp", xres, yres, bpp, LOG_HEIGHT, LOG_WIDTH))
+	}
+	fbStride = stride
+	size := stride * yres
 	fbData, err := syscall.Mmap(int(fFb.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil { panic(err) }
 
@@ -331,14 +340,19 @@ func runControl(fb []byte, fIn *os.File) {
 		}
 	}()
 
-	buf := make([]byte, 16)
+	// struct input_event: a struct timeval (16 bytes on 64-bit, 8 on 32-bit), then type, code, value
+	var ev struct {
+		Time  syscall.Timeval
+		Type  uint16
+		Code  uint16
+		Value int32
+	}
 	for {
-		_, err := fIn.Read(buf)
-		if err != nil { break }
-
-		typ := binary.LittleEndian.Uint16(buf[8:10])
-		code := binary.LittleEndian.Uint16(buf[10:12])
-		val := int32(binary.LittleEndian.Uint32(buf[12:16]))
+		if err := binary.Read(fIn, binary.LittleEndian, &ev); err != nil {
+			fmt.Println("Input read failed:", err)
+			break
+		}
+		typ, code, val := ev.Type, ev.Code, ev.Value
 
 		if typ == 1 {
 			m := getMode()
@@ -478,9 +492,11 @@ func changeValue(delta int) {
 	if layout.BtnH < 10 { layout.BtnH = 10 }
 }
 
-// defaultKeyMapKeys is the factory calibration for the D200 touch controller.
+// defaultKeyMapKeys are the key codes in reading order, as the mainline kernel's
+// matrix keypad in d200-buildroot reports them: KEY_F13..KEY_F24, KEY_PROG1, KEY_PROG2.
+// (The stock firmware used 29, 15, 14, 13, 12, 11, 10, 9, 8, 7, 34, 33, 31, 30.)
 // Overridden by config/keymap.json after user calibration.
-var defaultKeyMapKeys = []int{29, 15, 14, 13, 12, 11, 10, 9, 8, 7, 34, 33, 31, 30}
+var defaultKeyMapKeys = []int{183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 148, 149}
 
 func loadKeyMap() {
 	km := KeyMapJSON{Keys: defaultKeyMapKeys}
@@ -681,7 +697,7 @@ func rotateRect(fb []byte, img *image.RGBA, rect image.Rectangle) {
 		srcRow := ly * LOG_WIDTH * 4
 		for lx := minX; lx < maxX; lx++ {
 			si := srcRow + lx*4
-			di := ((LOG_WIDTH - 1 - lx) * WIDTH + ly) * 4
+			di := (LOG_WIDTH-1-lx)*fbStride + ly*4
 			fb[di+0] = src[si+2]
 			fb[di+1] = src[si+1]
 			fb[di+2] = src[si+0]
@@ -723,13 +739,36 @@ func updateDisplay(fb []byte) {
 		srcRow := ly * LOG_WIDTH * 4
 		for lx := 0; lx < LOG_WIDTH; lx++ {
 			si := srcRow + lx*4
-			di := ((LOG_WIDTH - 1 - lx) * WIDTH + ly) * 4
+			di := (LOG_WIDTH-1-lx)*fbStride + ly*4
 			fb[di+0] = src[si+2]
 			fb[di+1] = src[si+1]
 			fb[di+2] = src[si+0]
 			fb[di+3] = src[si+3]
 		}
 	}
+}
+
+// fbGeometry reads the visible size, depth and line length (bytes) of a framebuffer device.
+func fbGeometry(fd uintptr) (xres, yres, bpp, stride int, err error) {
+	var v [40]uint32 // struct fb_var_screeninfo: xres, yres, ..., bits_per_pixel at [6]
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, 0x4600, uintptr(unsafe.Pointer(&v))); e != 0 { // FBIOGET_VSCREENINFO
+		return 0, 0, 0, 0, fmt.Errorf("FBIOGET_VSCREENINFO: %w", e)
+	}
+	var f struct { // struct fb_fix_screeninfo
+		id                            [16]byte
+		smemStart                     uintptr
+		smemLen, typ, typeAux, visual uint32
+		xpanstep, ypanstep, ywrapstep uint16
+		lineLength                    uint32
+		mmioStart                     uintptr
+		mmioLen, accel                uint32
+		capabilities                  uint16
+		reserved                      [2]uint16
+	}
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, fd, 0x4602, uintptr(unsafe.Pointer(&f))); e != 0 { // FBIOGET_FSCREENINFO
+		return 0, 0, 0, 0, fmt.Errorf("FBIOGET_FSCREENINFO: %w", e)
+	}
+	return int(v[0]), int(v[1]), int(v[6]), int(f.lineLength), nil
 }
 
 // drawSideBySide renders icon on the left half, text+text2 stacked on the right half.
