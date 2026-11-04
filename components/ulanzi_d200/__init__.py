@@ -13,6 +13,7 @@ from esphome.const import (
     CONF_ID,
     CONF_NAME,
     CONF_OUTPUT_ID,
+    CONF_ROTATION,
 )
 
 DEPENDENCIES = ['uart']
@@ -144,6 +145,8 @@ CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(): cv.declare_id(UlanziBridge),
     cv.GenerateID(CONF_UART_ID): cv.use_id(uart.UARTComponent),
     cv.Optional(CONF_BACKLIGHT, default={CONF_NAME: 'Display Backlight'}): BACKLIGHT_SCHEMA,
+    # How far the D200 is mounted turned clockwise from landscape (docs/configuration.md)
+    cv.Optional(CONF_ROTATION, default=0): cv.one_of(0, 90, 180, 270, int=True),
     cv.Optional(CONF_ON_CONNECTED): automation.validate_automation({
         cv.GenerateID(automation.CONF_TRIGGER_ID): cv.declare_id(ConnectedTrigger),
     }),
@@ -170,6 +173,7 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
+    cg.add(var.set_rotation(config[CONF_ROTATION]))
 
     # Create backlight light entity via proper ESPHome registration
     await light.new_light(config[CONF_BACKLIGHT], var)

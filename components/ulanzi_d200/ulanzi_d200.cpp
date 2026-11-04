@@ -1146,6 +1146,11 @@ void UlanziBridge::send_section_display_update_(int section_index, const std::ma
 void UlanziBridge::send_all_section_configs_() {
   ESP_LOGI(TAG, "Sending all section configs (%d sections)", this->sections_.size());
 
+  // Rotation first: the daemon keeps it only in memory, and draws the configs below with it
+  char rotation[8];
+  snprintf(rotation, sizeof(rotation), "%d", this->rotation_);
+  this->send_command("display", "set_rotation", rotation);
+
   // Two passes: page-specific sections first (to auto-create pages on daemon),
   // then "all pages" sections (page=-1) so they get distributed to all pages.
   auto send_config = [this](int i) {

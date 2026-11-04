@@ -95,6 +95,7 @@ ulanzi_d200:
 | `id` | ID | Yes | Component instance ID |
 | `uart_id` | ID | Yes | Reference to UART component |
 | `backlight` | light | No | The backlight light entity: any ESPHome light option. Default name `Display Backlight` |
+| `rotation` | int | No | `0` (default), `90`, `180` or `270`: how far the D200 is mounted turned clockwise. See [Rotation](#rotation) |
 | `on_connected` | Automation | No | Fires when D200 connection is detected |
 | `on_disconnected` | Automation | No | Fires after 10 s with no UART data |
 | `on_section_press` | Automation | No | Fires on any section press. Variable: `position` (int) |
@@ -105,11 +106,11 @@ ulanzi_d200:
 
 ### Section configuration
 
-A section represents a physical display area on the D200 grid (positions 0–13).
+A section represents a display area (key) on the D200 grid (positions 0–13).
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `position` | int | **required** | Physical button index (0–13) |
+| `position` | int | **required** | Key position (0–13), in the viewer's reading order: see [Rotation](#rotation) |
 | `page` | int | `-1` | Page assignment: `-1` = all pages, `0+` = specific page only |
 | `on_press` | Automation | — | Fires when this section is pressed |
 | `on_release` | Automation | — | Fires when this section is released |
@@ -122,13 +123,44 @@ Notes:
 - A section with `page: -1` appears on every page
 - Sections have no built-in toggle or momentary behavior — they emit raw press/release events
 
-Physical grid layout:
+Grid layout (`rotation: 0`, landscape):
 
 ```
 Row 0:  [ 0] [ 1] [ 2] [ 3] [ 4]
 Row 1:  [ 5] [ 6] [ 7] [ 8] [ 9]
 Row 2:  [10] [11] [12] [13 ══════]
 ```
+
+### Rotation
+
+`rotation` says how far the D200 is mounted turned **clockwise** from its normal landscape position, so it can
+hang vertically. The daemon draws every key upright for the viewer and numbers the keys as the viewer reads them:
+the 13 small keys `0`–`12` left to right, top to bottom, and the big key is always `13`. `on_press` of a position
+fires for the key the viewer sees there. `rotation: 0` is the plain landscape layout above.
+
+`T` marks the edge that is on top in landscape:
+
+```
+rotation: 0                  rotation: 90               rotation: 270                rotation: 180
+                             turned 90° clockwise       turned 90° counter-clockwise upside down
+ T  T  T  T  T                 +--------------+          +--------------+
++--------------------------+   | 0    1    2  | T      T |  0    1  13  |
+| 0    1    2    3    4    |   | 3    4    5  | T      T |  2    3  13  |    +--------------------------+
+| 5    6    7    8    9    |   | 6    7    8  | T      T |  4    5    6  |    | 13 ═════  0    1    2    |
+| 10   11   12   13 ═════  |   | 13   9   10  | T      T |  7    8    9  |    | 3    4    5    6    7    |
++--------------------------+   | 13  11   12  | T      T | 10   11   12  |    | 8    9   10   11   12    |
+                               +--------------+          +--------------+    +--------------------------+
+                                                                               T  T  T  T  T
+```
+
+At 90 and 270 the big key `13` is tall (two rows high, one column wide). `status` stacks its items (icon over
+text), `chips` stack into a column, `gauge` and `line_graph` draw in the middle square of the tall key, and the
+daemon's `side-by-side` layout (raw `set_config` only) puts the icon above the text. Calibration and layout-edit modes (`set_mode`) are drawn unrotated, with the
+landscape numbering.
+
+The component sends the rotation to the daemon before each full config upload (when the daemon starts or restarts,
+when ESPHome starts, back to run mode); the daemon redraws everything at once. NDJSON:
+`{"module":"display","action":"set_rotation","params":["90"]}`.
 
 ### Layout configuration
 

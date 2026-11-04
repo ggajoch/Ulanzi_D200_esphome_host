@@ -144,6 +144,7 @@ class UlanziBridge : public Component, public uart::UARTDevice {
   void send_ping();
   void reset_all_buttons();
   void set_brightness(uint8_t brightness);
+  void set_rotation(int rotation) { this->rotation_ = rotation; }
   void toggle_display();
   void send_sensor_reading(const char *sensor, float value);
   void send_notification(int button_id, int page_id, const char *message);
@@ -270,6 +271,9 @@ class UlanziBridge : public Component, public uart::UARTDevice {
   // Backlight light
   light::LightState *backlight_light_state_{nullptr};
   int last_brightness_sent_{-1};
+
+  // Mounting rotation (0, 90, 180, 270 degrees clockwise), sent with every full config
+  int rotation_{0};
 
   // Batch command queue (serialized: one batch in flight at a time)
   std::vector<std::string> pending_batch_;

@@ -82,7 +82,7 @@ Deploy to a stock D200 over adb: `docs/d200-preparation.md`.
 
 ```
 ulanzi_d200 (1 per device)
-  └── sections[] (physical button positions 0–13)
+  └── sections[] (button positions 0–13, in the viewer's reading order; see rotation)
         ├── position, page (-1 = all pages, 0+ = specific page)
         ├── on_press / on_release (ESPHome automations)
         └── layouts[] (conditional display states, first match wins)
@@ -111,7 +111,10 @@ ulanzi_d200 (1 per device)
   - keys from `/dev/input/event0`; `struct input_event` size follows the architecture;
   - key map holds both mainline (KEY_F13–F24, KEY_PROG1/2) and stock codes; `config/keymap.json` overrides;
   - clock time zone from `TZ`, else `config/timezone`, using embedded Go tzdata;
-  - status bar redrawn when the minute changes.
+  - status bar redrawn when the minute changes;
+  - rotation (`rotation: 0|90|180|270`): `keyOrder` renumbers the keys from the rotated key-window centres
+    (test: `rotation_test.go`), `drawTile` draws each tile upright in a canvas and turns it into its window;
+    calibration and layout-edit modes stay unrotated.
 - `pkg/state/store.go`: ButtonConfig/ButtonState, RingBuffer time series, RWMutex, persisted to `config/state.json`.
 - `pkg/transport/commands.go`: NDJSON modules `display`, `sensor`, `page`, `system`; codes OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
 - `pkg/transport/serial.go`: 1.5 Mbps; port from `ULANZI_SERIAL`, default `/dev/ttyFIQ0`.
@@ -121,6 +124,11 @@ ulanzi_d200 (1 per device)
 
 ESPHome → D200: `{"type":"command","module":"display","action":"set_button_config","params":{...}}`
 D200 → ESPHome: `{"type":"response","status":"ok","code":0,...}` and events such as `{"type":"event","event":"page_change",...}`.
+
+Rotation: `{"module":"display","action":"set_rotation","params":["90"]}` (0, 90, 180 or 270, degrees the D200 is
+mounted turned clockwise; anything else → INVALID). The component sends it first in every full config upload
+(`send_all_section_configs_`: daemon ready, connect fallback, back to run mode). The daemon keeps it in memory only,
+redraws everything, and from then on maps key presses and button IDs to the viewer's reading order.
 
 ### Key patterns
 
