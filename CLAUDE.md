@@ -1,76 +1,95 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Ulanzi_D200_esphome_host: a fork of mapero/esphome-ulanzi-d200 that runs ESPHome on the **Ulanzi D200**'s own
+RK3308 (ESPHome `host` platform, aarch64 Linux) instead of on an external ESP32. Home Assistant talks to it over
+WiFi (USB WiFi dongle on a powered USB-C hub). 14 keys, 5x3 grid, key 13 is double-wide.
 
-## Project Overview
-
-Ulanzi_D200_esphome_host: a fork of mapero/esphome-ulanzi-d200 that runs ESPHome on the **Ulanzi D200** stream deck's own RK3308 (ESPHome `host` platform, aarch64 Linux) instead of on an external ESP32. The D200 has a 14-button grid (5x3 layout, button 13 is double-wide).
-
-Two variants share the component and the daemon:
-- **Host** (this fork): open firmware from `buildroot/` (d200-buildroot, mainline kernel, arm64 userspace). ESPHome (`examples/host/d200.yaml`) and the daemon run on the D200, joined by a socat pty pair (`/run/d200-esp` ⇄ `/run/d200-daemon`) that `S70esphome` starts. Home Assistant connects over WiFi.
-- **ESP32** (upstream): stock firmware (ARMv7 userspace) with the daemon; an ESP32 on the debug UART (`/dev/ttyFIQ0`) runs ESPHome. `examples/*.yaml`, `docs/d200-preparation.md`, `firmware/`, `install.*`.
-
-Subsystems:
-- **ESPHome component** (`components/ulanzi_d200/`) — Python schema + C++ bridge logic; the same code in both variants
-- **Go daemon** (`daemon/`) — runs on the D200, renders the UI on `/dev/fb0` and reads the keys
-- **Firmware** (`buildroot/`) — patches and build script for d200-buildroot. GPL-2.0-or-later, maintained separately; the rest of the repo is MIT
-
-Communication: NDJSON over a UART (ESP32 variant) or a pty (host variant) at 1.5 Mbps.
-
-## Build Commands
-
-### Host variant
-
-```bash
-examples/host/build.sh                    # Linux/WSL: ESPHome + daemon -> ~/d200/esphome/out/{d200,ulanzi-control}
-DEVICE=<D200 IP> examples/host/deploy.sh  # build, then ESPHome OTA of the d200 binary
+```
+HA ⇄ WiFi ⇄ ESPHome (/data/esphome/d200) ⇄ socat pty (/run/d200-esp ⇄ /run/d200-daemon) ⇄ ulanzi-control → /dev/fb0, /dev/input/event0, backlight
 ```
 
-`build.sh` needs the Buildroot host toolchain of the D200 image (`BR_HOST`): the binary must match the device's glibc. Keep its flags: `-O2`, static libstdc++/libgcc, a static OpenSSL `libcrypto` for OTA, stripped (`esphome.build_flags` in `d200.yaml` plus `CC`/`CXX` in `build.sh`). It compiles a copy on ext4 (`~/d200/esphome/build/`), never on `/mnt/c`. The OTA carries only ESPHome: a daemon change is copied to `/data/ulanzi-control/` by hand.
+Two variants share the component and the daemon: **host** (this fork: `buildroot/` firmware, `examples/host/`) and
+**ESP32** (upstream: stock firmware, ESP32 on the debug UART; `examples/*.yaml`, `docs/d200-preparation.md`,
+`firmware/`, `install.*`). Keep the ESP32 variant building; the daemon's default key map covers both firmwares.
 
-`examples/host/secrets.yaml` holds the real API/OTA key and is git-ignored; `backup/` holds stock firmware dumps and is git-ignored. Commit neither.
+## Where to change what
 
-### ESP32 Component (ESPHome)
+| To change | Edit | Ship it with |
+|---|---|---|
+| Keys, pages, HA entities, labels, colours, hold-to-activate | `examples/host/d200.yaml` (entities and labels in `substitutions:`), `examples/host/d200-toggle.yaml` (one toggle key) | ESPHome deploy |
+| Widget types, YAML schema, layout logic, HA services of the component | `components/ulanzi_d200/` (`__init__.py` schema/codegen, `.h`/`.cpp` runtime), document in `docs/configuration.md` | ESPHome deploy |
+| Drawing, fonts, icons, key-code map, status bar, clock | `daemon/` (`pkg/ui/`, `cmd/ulanzi-control/main.go`) | daemon deploy |
+| NDJSON protocol | both sides together: `components/ulanzi_d200/ulanzi_d200.cpp` and `daemon/pkg/transport/commands.go` | both deploys |
+| OS: kernel config, drivers, DT, init scripts, USB mode, WiFi, NTP, SSH, packages | d200-buildroot dev tree → `buildroot/patches/` | firmware workflow |
+| Per-device settings | on the D200: `/data/wpa_supplicant.conf`, `/data/ntp.conf`, `/data/ssh/authorized_keys`, `/data/ulanzi-control/config/timezone`, `/data/esphome/mdns.txt` | edit in place, restart the service |
 
-```bash
-# Compile firmware (from repo root or examples dir)
-esphome compile examples/basic.yaml
+## Environment
 
-# Flash to device
-esphome run examples/basic.yaml
-
-# View logs
-esphome logs examples/basic.yaml
-```
-
-Requires `secrets.yaml` in `examples/` — copy from `examples/secrets.yaml.example`.
-
-### Go Daemon
+All builds run in the WSL2 distro `wsl2` (Ubuntu), with work dirs on ext4, never `/mnt/c`. From Git Bash:
 
 ```bash
-# Build for the stock D200 firmware (ARMv7 Linux, ESP32 variant)
-cd daemon && GOOS=linux GOARCH=arm GOARM=7 go build -o ulanzi-control ./cmd/ulanzi-control/
-
-# Build for d200-buildroot (arm64, host variant; examples/host/build.sh does this)
-cd daemon && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o ulanzi-control ./cmd/ulanzi-control/
-
-# Build for local development
-cd daemon && go build -o ulanzi-control ./cmd/ulanzi-control/
-
-# Deploy to a stock D200 via ADB (ESP32 variant)
-adb push daemon/ulanzi-control /userdata/ulanzi-control/
-adb push daemon/deploy/S95ulanzi /userdata/ulanzi-control/
-adb push daemon/deploy/ulanzi-run.sh /userdata/ulanzi-control/
-
-# /etc/init.d is read-only; create a symlink instead
-adb shell ln -sf /userdata/ulanzi-control/S95ulanzi /etc/init.d/S95ulanzi
+MSYS_NO_PATHCONV=1 wsl.exe -d wsl2 -- bash -s <<'EOF'
+cd /mnt/c/Users/gregg/repos/ulanzi && ...
+EOF
 ```
 
-Go 1.22+ required. Dependencies: `golang.org/x/image`, `go.bug.st/serial`.
+Inside a WSL heredoc, `ssh` swallows the rest of the script: use `ssh -n` or `< /dev/null`.
 
-## Architecture
+## Workflows
 
-### Concept Model
+**ESPHome deploy** (YAML or component changes): `DEVICE=<ip> bash examples/host/deploy.sh` builds and OTAs
+(about 1.5 min). `examples/host/build.sh` alone builds both binaries into `~/d200/esphome/out/`. It needs the D200
+image's Buildroot host toolchain in `BR_HOST` (default `~/d200/d200-buildroot/BuildEnv/output-debug/host`; with
+`buildroot/build.sh` it is `~/d200-buildroot-esphome/BuildEnv/output-debug/host`), so the binary matches the
+device's glibc. Keep its flags: `-O2`, static libstdc++/libgcc, static OpenSSL `libcrypto` (needed by OTA), stripped.
+
+**Daemon deploy**: the OTA carries only ESPHome. Copy `~/d200/esphome/out/ulanzi-control` to
+`/data/ulanzi-control/`, then `kill $(pidof ulanzi-control)`; `S70esphome` restarts it.
+
+**Firmware workflow** (`buildroot/` = patch series on riptidewave93/d200-buildroot, pin in `buildroot/UPSTREAM`):
+1. Change and commit in the dev tree `~/d200/d200-buildroot` (branch `wifi-test`, equal to `buildroot/patches/`),
+   following that repo's `AGENTS.md`. Build with `make build FLAVOR=debug` (or `make linux-rebuild`, etc.).
+2. Re-export the whole series: `rm buildroot/patches/*.patch; git format-patch --binary <UPSTREAM_COMMIT>..HEAD -o <repo>/buildroot/patches`, then commit here.
+3. Install the `output/<date>-debug/*-update.tar` through deckd's update page:
+   - over SSH: `/etc/init.d/S70esphome stop; /etc/init.d/S60deckd start` (the page only runs with deckd);
+   - upload: `curl -H "Expect:" -H "X-Deck-Update: 1" -T <tar> http://<ip>/update/bundle`, with a long `-m`, because 20 MB over weak WiFi can take minutes;
+   - someone must press **Install** (wide key, bottom right) within 2 min of the prompt; poll `http://<ip>/update/status`.
+   A U-Boot change makes the update rewrite U-Boot. First install from stock firmware (maskrom, usbipd on Windows):
+   `buildroot/README.md`.
+
+## Device
+
+- **SSH:** `root`, no password, over every interface (USB, WiFi, Ethernet): the device belongs on a trusted LAN.
+  Keys in `/data/ssh/authorized_keys` also work.
+- **USB modes:** in USB host mode (default, `usb_mode=host` in the U-Boot env) the device is on WiFi/Ethernet. In USB
+  device mode (`fw_setenv usb_mode device`, reboot) the PC sees a USB network link instead. Recovery:
+  `buildroot/README.md`.
+- **Logs:** `/var/log/messages`, tags `esphome`, `ulanzi`, `socat`, `ntpd`, `deckd`. Stack:
+  `/etc/init.d/S70esphome start|stop|restart`. The rootfs is read-only; everything persistent lives in `/data`.
+
+## Invariants
+
+- **HA identity:** keep `esphome: name`, `host: mac_address` and the API key in `examples/host/d200.yaml` unchanged,
+  or Home Assistant sees a new device. `mac=` in `/data/esphome/mdns.txt` must match `host: mac_address`.
+- **Compressor key:** hold-only (1 s), so it is never started by accident.
+- **Secrets stay out of git:** `examples/host/secrets.yaml` (real API/OTA key) and `backup/` (stock firmware dump) are
+  git-ignored.
+- **Line endings:** `.gitattributes` forces LF (bash in WSL rejects CRLF). Commit new scripts with
+  `git add --chmod=+x`. `buildroot/patches/*.patch` are `-text`, so `git am` gets them byte for byte.
+- **WiFi dongle:** MT7601U works. AR9271 (ath9k_htc) fails behind DWC2 with "Failed to read SREV register"
+  (interrupt-endpoint register reads). Details, measurements, open issues: `docs/development-notes.md`.
+
+## ESP32 variant (upstream)
+
+```bash
+esphome compile examples/basic.yaml        # needs examples/secrets.yaml (from secrets.yaml.example)
+cd daemon && GOOS=linux GOARCH=arm GOARM=7 go build -o ulanzi-control ./cmd/ulanzi-control/   # stock firmware
+```
+Deploy to a stock D200 over adb: `docs/d200-preparation.md`.
+
+## Architecture reference
+
+### Concept model
 
 ```
 ulanzi_d200 (1 per device)
@@ -83,35 +102,40 @@ ulanzi_d200 (1 per device)
               └── properties (text, color, icon_id, etc. — static or lambda)
 ```
 
-### ESPHome Component (C++/Python)
+### ESPHome component (C++/Python)
 
-- `__init__.py` — ESPHome YAML schema validation and C++ code generation. Defines all widget types and their properties. Processes lambda vs static string properties.
-- `ulanzi_d200.h` — `UlanziBridge` class (extends `Component`, `UARTDevice`). Also declares `UlanziBacklightLight` (brightness-only light entity), trigger classes, and data structures for sections/layouts/widgets.
-- `ulanzi_d200.cpp` — Core implementation:
-  - **Layout evaluation**: runs every 1s, evaluates layout conditions top-to-bottom, sends first match
-  - **Template caching**: properties only sent over UART when changed (dirty flag)
-  - **Batch command queue**: max 4 commands/batch, 3s response timeout, flow control via in_flight flag
-  - **UART parsing**: handles NDJSON responses, robust against kernel printk noise
-  - **Page navigation**: `navigate_page_next()`, `navigate_page_prev()`, `navigate_page_jump(n)`
-  - **HA integration**: exposes brightness as light entity, auto-registers notification services
+- `__init__.py`: YAML schema validation and C++ code generation; all widget types and their properties; lambda vs static string properties.
+- `ulanzi_d200.h`: `UlanziBridge` (`Component`, `UARTDevice`), `UlanziBacklightLight`, trigger classes, section/layout/widget structures.
+- `ulanzi_d200.cpp`:
+  - layout evaluation every 1 s, first matching layout sent;
+  - properties sent only when changed;
+  - batch queue: max 4 commands per batch, 3 s response timeout;
+  - NDJSON parsing robust against printk noise;
+  - page navigation (`navigate_page_next/prev/jump`);
+  - backlight light entity, notification services;
+  - ping every 5 s against a 10 s timeout.
 
-### Go Daemon
+### Go daemon
 
-- `cmd/ulanzi-control/main.go` — Entry point. Framebuffer rendering (720x1280 @ 32bpp, geometry read from the fb ioctls), button input from `/dev/input/event0` (`struct input_event` size follows the architecture: 24 bytes on arm64). Default key map holds both the mainline kernel's KEY_F13–F24, KEY_PROG1/2 and the stock firmware's codes (they don't overlap); `config/keymap.json` overrides. Clock time zone: `TZ`, else `config/timezone` (Go tzdata is embedded; the image has none).
-- `pkg/state/store.go` — Global state singleton. ButtonConfig/ButtonState management, RingBuffer for time-series data, thread-safe (RWMutex), state persistence to `config/state.json`.
-- `pkg/transport/commands.go` — NDJSON protocol implementation. Modules: `display`, `sensor`, `page`, `system`. Error codes: OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
-- `pkg/transport/serial.go` — Serial communication (1.5 Mbps); the port is `ULANZI_SERIAL`, default `/dev/ttyFIQ0`.
-- `pkg/ui/draw.go` + `font.go` — Display rendering pipeline with per-button dirty flags.
+- `cmd/ulanzi-control/main.go`:
+  - framebuffer: geometry from the fb ioctls, 720x1280 at 32 bpp, rotated to landscape;
+  - keys from `/dev/input/event0`; `struct input_event` size follows the architecture;
+  - key map holds both mainline (KEY_F13–F24, KEY_PROG1/2) and stock codes; `config/keymap.json` overrides;
+  - clock time zone from `TZ`, else `config/timezone`, using embedded Go tzdata;
+  - status bar redrawn when the minute changes.
+- `pkg/state/store.go`: ButtonConfig/ButtonState, RingBuffer time series, RWMutex, persisted to `config/state.json`.
+- `pkg/transport/commands.go`: NDJSON modules `display`, `sensor`, `page`, `system`; codes OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
+- `pkg/transport/serial.go`: 1.5 Mbps; port from `ULANZI_SERIAL`, default `/dev/ttyFIQ0`.
+- `pkg/ui/draw.go`, `font.go`: rendering with per-button dirty flags.
 
-### NDJSON Protocol
+### NDJSON protocol
 
-ESPHome sends commands: `{"type":"command", "module":"display", "action":"set_button_config", "params":{...}}`
-D200 responds: `{"type":"response", "status":"ok", "code":0, ...}`
-D200 sends events: `{"type":"event", "event":"page_change", ...}` for button presses, page changes, mode changes.
+ESPHome → D200: `{"type":"command","module":"display","action":"set_button_config","params":{...}}`
+D200 → ESPHome: `{"type":"response","status":"ok","code":0,...}` and events such as `{"type":"event","event":"page_change",...}`.
 
-### Key Patterns
+### Key patterns
 
-- **Conditional rendering**: layouts evaluated top-to-bottom, first matching `when` wins; layout without `when` is the fallback
-- **All string properties** accept static strings or `!lambda` returning `optional<std::string>`
-- **HA state sync**: template switch (optimistic, calls HA service) + binary_sensor (syncs real state back) — see `docs/component.md` for the pattern
-- **Page -1**: sections visible on all pages (navigation bars, status bars)
+- Layouts are evaluated top to bottom; the first matching `when` wins; a layout without `when` is the fallback.
+- String properties take a static string or a `!lambda` returning `optional<std::string>`.
+- HA state sync: an optimistic template switch calls the HA action, and a `platform: homeassistant` binary_sensor syncs the real state back (`examples/host/d200-toggle.yaml`).
+- Page -1: sections shown on every page (navigation, status bar).
