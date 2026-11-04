@@ -1,0 +1,82 @@
+From dafce5ac4c3951ca06a3450280acfd03e68f744a Mon Sep 17 00:00:00 2001
+From: Grzegorz Gajoch <gajoch@gmail.com>
+Date: Wed, 4 Nov 2026 04:36:01 +0100
+Subject: [PATCH 3/9] feat(net): USB Ethernet adapters in host mode
+
+- Linux: usbnet with AX88179, CDC Ethernet, CDC NCM, and RTL8152/8153.
+- S31eth-dhcp: udhcpc on each eth* that appears in the first 30 s.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ board/ulanzi/d200/linux.config                |  2 +
+ .../rootfs-overlay/etc/init.d/S31eth-dhcp     | 45 +++++++++++++++++++
+ 2 files changed, 47 insertions(+)
+ create mode 100755 board/ulanzi/d200/rootfs-overlay/etc/init.d/S31eth-dhcp
+
+diff --git a/board/ulanzi/d200/linux.config b/board/ulanzi/d200/linux.config
+index 906a0d5..10598d5 100644
+--- a/board/ulanzi/d200/linux.config
++++ b/board/ulanzi/d200/linux.config
+@@ -125,6 +125,8 @@ CONFIG_MTD_UBI_FASTMAP=y
+ CONFIG_NETDEVICES=y
+ # CONFIG_NET_CORE is not set
+ # CONFIG_ETHERNET is not set
++CONFIG_USB_RTL8152=y
++CONFIG_USB_USBNET=y
+ CONFIG_ATH9K_HTC=y
+ CONFIG_MT7601U=y
+ CONFIG_INPUT_EVDEV=y
+diff --git a/board/ulanzi/d200/rootfs-overlay/etc/init.d/S31eth-dhcp b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S31eth-dhcp
+new file mode 100755
+index 0000000..f156c4a
+--- /dev/null
++++ b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S31eth-dhcp
+@@ -0,0 +1,45 @@
++#!/bin/sh
++#
++# ESPHome image (docs/esphome.md): wired network for debugging in USB host
++# mode. For WAIT seconds after boot, bring up every USB Ethernet adapter
++# (eth*) that appears and run a DHCP client on it. Logs go to syslog.
++#
++
++WAIT=30
++PIDFILE=/var/run/eth-dhcp.pid
++
++watch() {
++	seen=" "
++	for _ in $(seq $WAIT); do
++		for d in /sys/class/net/eth*; do
++			i=${d##*/}
++			[ -e "$d" ] || continue
++			case "$seen" in *" $i "*) continue ;; esac
++			seen="$seen$i "
++			logger -t eth "$i is there, starting udhcpc"
++			ip link set "$i" up
++			# the hostname lets the router's lease list show the device
++			udhcpc -b -S -i "$i" -p "/var/run/udhcpc-$i.pid" -x hostname:"$(hostname)"
++		done
++		sleep 1
++	done
++}
++
++start() {
++	printf "Starting USB Ethernet DHCP: "
++	if start-stop-daemon -S -q -b -m -p $PIDFILE -x /bin/sh -- "$0" watch; then
++		echo "OK"
++	else
++		echo "FAIL"
++	fi
++}
++
++case "$1" in
++	start|watch)
++		"$1";;
++	stop|restart|reload)
++		;;
++	*)
++		echo "Usage: $0 {start|stop|restart|reload}"
++		exit 1
++esac
+-- 
+2.43.0
+

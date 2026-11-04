@@ -1,0 +1,228 @@
+From 57248acdaeea3148f9271d77faf2f1777083c031 Mon Sep 17 00:00:00 2001
+From: Grzegorz Gajoch <gajoch@gmail.com>
+Date: Wed, 4 Nov 2026 04:36:02 +0100
+Subject: [PATCH 9/9] docs: ESPHome build
+
+docs/esphome.md: hardware, USB modes and the way back to device mode, setup
+over USB, ESPHome and the display daemon, SSH, NTP, boot order, logs,
+debugging, firmware sources and licences.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/esphome.md | 204 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 204 insertions(+)
+ create mode 100644 docs/esphome.md
+
+diff --git a/docs/esphome.md b/docs/esphome.md
+new file mode 100644
+index 0000000..d1fb9ba
+--- /dev/null
++++ b/docs/esphome.md
+@@ -0,0 +1,204 @@
++# ESPHome test build
++
++A test build: the D200 joins WiFi through a USB WiFi dongle on its USB-C port and runs an ESPHome `host` platform
++build, which drives the display and the keys itself.
++
++## What you need
++
++- A debug build of this branch. The first time, install it fully, as it changes U-Boot:
++  [`d200-install.py`](flashing.md#from-maskrom) or a full `./flash-fastboot.sh`. Later builds of this branch only
++  need the kernel and root filesystem, e.g. from the [update page](update.md#1-update-page).
++- A USB-C hub with USB-A ports and a charger input, and a charger. The D200 can't supply VBUS: in host mode the D200
++  and the dongle run from the charger through the hub.
++- A USB WiFi dongle. Works: **MT7601U** (`148f:7601`). Doesn't initialise yet: AR9271 (`0cf3:9271`, `ath9k_htc`).
++- Optional: a USB Ethernet adapter ([Debugging](#debugging)).
++- An ESPHome `host` platform build for aarch64 Linux, and optionally a display daemon that talks to it over a pty
++  ([2. ESPHome](#2-esphome)).
++
++## USB modes
++
++The U-Boot env variable `usb_mode` picks what the USB-C port is:
++
++| `usb_mode` | USB-C port |
++|---|---|
++| `host` (default) | USB host, for the hub, the dongle and an Ethernet adapter. No USB gadget: no USB SSH, USB drive or PC app |
++| `device` | USB device, as on the normal firmware |
++
++U-Boot boots the kernel with the `usb-host` overlay when `usb_mode=host`. After a fresh install `usb_mode` is unset:
++that first boot is a USB device, and `S01usb-mode` sets `usb_mode=host` for the next ones.
++
++Over SSH:
++```bash
++fw_setenv usb_mode device && reboot     # USB device
++fw_setenv usb_mode host && reboot       # USB host
++```
++Without SSH, get back to a USB device with fastboot: hold the **top-left key** while plugging the D200 into the PC
++(the screen shows "Fastboot", [recovery.md](recovery.md#11-fastboot-key)), then:
++```bash
++fastboot oem "run:setenv usb_mode device; saveenv"
++fastboot reboot
++```
++
++## 1. Set up over USB
++
++In USB device mode (the first boot after an install, or after `fw_setenv usb_mode device`), with the D200 on the PC;
++`d200-<serial>.local` is its USB Ethernet name ([linux.md](linux.md#usb)):
++
++1. Your SSH key: in host mode SSH takes keys only ([SSH](#ssh)).
++   ```bash
++   ssh root@d200-<serial>.local 'mkdir -p -m 700 /data/ssh; cat >> /data/ssh/authorized_keys' < ~/.ssh/id_ed25519.pub
++   ```
++2. WiFi (WPA2-PSK):
++   ```bash
++   ssh root@d200-<serial>.local 'umask 077; cat > /data/wpa_supplicant.conf' <<'EOF'
++   ctrl_interface=/var/run/wpa_supplicant
++   network={
++       ssid="your network"
++       psk="your passphrase"
++   }
++   EOF
++   ```
++3. ESPHome, and optionally the display daemon: [2. ESPHome](#2-esphome).
++4. Host mode: `ssh root@d200-<serial>.local fw_setenv usb_mode host`. Then unplug the D200 from the PC and plug it
++   into the hub, with the charger and the dongle on the hub.
++
++In host mode `S32wifi` waits up to 30 s for `wlan0`, then runs `wpa_supplicant` and `udhcpc`, which sends the hostname
++`d200-<serial>`. Then `ssh root@d200-<serial>.local` (mDNS), or use the address from the router's lease list.
++
++## 2. ESPHome
++
++Copy the build to `/data/esphome/d200` and start it (it also starts at every boot):
++```bash
++ssh root@d200-<serial>.local mkdir -p /data/esphome
++scp d200 root@d200-<serial>.local:/data/esphome/d200
++ssh root@d200-<serial>.local /etc/init.d/S70esphome start
++```
++
++`S70esphome` stops deckd, so nothing else uses the display or the keys. Right after an update it first waits (up to
++2 minutes) for deckd to [confirm the new version](ota.md#boot), or the update would roll back. It runs ESPHome in
++`/data/esphome` with `ESPHOME_PREFDIR=/data/esphome/prefs`.
++
++**With a display daemon:** if `/data/ulanzi-control/ulanzi-control` exists too, `S70esphome` first starts a pty
++pair, `socat pty,link=/run/d200-esp,raw,echo=0 pty,link=/run/d200-daemon,raw,echo=0`, then the daemon in
++`/data/ulanzi-control` with `ULANZI_SERIAL=/run/d200-daemon`, then ESPHome, which opens `/run/d200-esp`. If socat
++exits, the ptys are gone: the daemon and ESPHome are stopped too and all three start again on new ones.
++
++Each program is restarted when it exits (after 1 s, up to 30 s if it keeps failing); an ESPHome OTA update that
++re-executes it keeps running. Their output goes to syslog (`/var/log/messages`), tags `esphome`, `ulanzi` and
++`socat`.
++
++| Device | What |
++|---|---|
++| `/dev/fb0` | The display: 720x1280, 32 bpp (XRGB8888), 2880 bytes per line. No console on it |
++| `/dev/input/event0` | The keys ([linux.md](linux.md#display-and-keys)) |
++| `/sys/class/backlight/backlight/brightness` | Backlight, 0-255 |
++
++Back to the normal key app: `/etc/init.d/S70esphome stop; /etc/init.d/S60deckd start`, or delete the binary and
++reboot. The update page is part of deckd: stop ESPHome before using it.
++
++**mDNS:** while ESPHome runs, mdnsd advertises `_esphomelib._tcp` on port 6053 with the TXT records ESPHome devices
++send:
++
++| TXT | Value |
++|---|---|
++| `mac` | `983569abf679`, ESPHome's default `mac_address` for the `host` platform |
++| `version` | Read from the binary |
++| `platform`, `board`, `network` | `host`, `host`, `wifi` |
++
++Home Assistant needs `mac` to match what the device reports. To change or add records, put `key=value` lines in
++`/data/esphome/mdns.txt`, for example `mac=<your mac_address, lowercase, no colons>`, `friendly_name=<name>`, or
++`api_encryption=Noise_NNpsk0_25519_ChaChaPoly_SHA256` when the API has an encryption key. Then run
++`/etc/init.d/S70esphome restart`.
++
++## SSH
++
++| USB mode | Logins |
++|---|---|
++| `device` | root without a password over USB Ethernet (the only network then), or with a key |
++| `host` | Only keys in `/data/ssh/authorized_keys`, over WiFi and Ethernet. Without the file nobody can log in, and syslog says so |
++
++The UART console is a root shell in both modes.
++
++## Clock
++
++There is no RTC. At boot the clock starts from the time saved in `/data/clock`, or the build time
++([linux.md](linux.md#root-filesystem)). Once the network is up, `S40ntpd` sets it over NTP and keeps it in sync, from
++`pool.ntp.org` or the servers in `/data/ntp.conf` (one per line). Its output goes to syslog, tag `ntpd`.
++
++## 3. Boot in host mode
++
++| Step | What |
++|---|---|
++| U-Boot | `usb_mode=host`: boots `kernel.itb` with the `usb-host` overlay |
++| Kernel | The port starts as a host; the hub and its devices enumerate. The WiFi firmware is built into the kernel |
++| `S01usb-mode` | Sets `usb_mode=host` if it's unset |
++| `S30usb-gadget` | No USB device controller: skips the gadget, only sets the hostname `d200-<serial>` |
++| `S31eth-dhcp` | For 30 s, runs `udhcpc` on each USB Ethernet adapter (`eth*`) that appears |
++| `S32wifi` | Waits up to 30 s for `wlan0`, then `wpa_supplicant` and `udhcpc` |
++| `S33wifi-diag` | Saves the [logs](#4-logs) for 3 minutes |
++| `S40ntpd` | Sets the clock over NTP once the network is up ([Clock](#clock)) |
++| `S50dropbear` | SSH, keys only ([SSH](#ssh)) |
++| `S60deckd` | Starts the key app |
++| `S70esphome` | If `/data/esphome/d200` exists: stops deckd (after it confirmed a pending update), runs ESPHome, and with a display daemon socat and the daemon first |
++
++## 4. Logs
++
++`S33wifi-diag` saves the state every 10 s for the first 3 minutes of every boot, to `/data/wifi-test/<n>/`. `<n>`
++counts boots; `/data/wifi-test/last` holds the newest. The last 10 boots are kept.
++
++| File | What |
++|---|---|
++| `timeline.txt` | Uptime, the port's `dr_mode`, `usb_mode`, gadget state and network interfaces at every step |
++| `dmesg.txt` | Kernel log: `dwc2`, USB enumeration, drivers and firmware |
++| `messages.txt` | Syslog: `wifi`, `eth`, `wpa_supplicant`, `udhcpc`, `ntpd`, `dropbear`, `esphome`, `ulanzi`, `socat` |
++| `lsusb.txt` | `lsusb` and `lsusb -t` |
++| `ip.txt` | `ip addr`, `ip route` |
++| `iw-dev.txt` | `iw dev` |
++| `wpa-status.txt` | `wpa_cli status` |
++| `dwc2.txt` | The USB controller's `params` and `hw_params` (debugfs), once per boot |
++
++## Debugging
++
++**Wired network in host mode:** plug a USB Ethernet adapter into the hub (AX88179 like the hub's own port, CDC
++Ethernet or NCM, RTL8152/8153). `S31eth-dhcp` gets it an address.
++
++`S33wifi-diag` mounts debugfs. Then, over SSH:
++
++| What | Command |
++|---|---|
++| USB traffic on bus 1 (text usbmon) | `cat /sys/kernel/debug/usb/usbmon/1u > /tmp/usbmon.txt &` |
++| `dwc2` and `usbcore` debug messages | `echo 'module dwc2 +p; module usbcore +p' > /sys/kernel/debug/dynamic_debug/control` |
++| `ath9k_htc` debug mask, used from the next probe on (`0x2000` WMI, `0xffffffff` all) | `echo 0xffffffff > /sys/module/ath9k_htc/parameters/debug` |
++| USB controller state | `/sys/kernel/debug/usb/ff400000.usb/` (`params`, `hw_params`, `regdump`) |
++| `ath9k_htc` statistics, once it initialised | `/sys/kernel/debug/ieee80211/phy0/ath9k_htc/` |
++
++To probe a USB device again without a power cycle, find its port with `lsusb -t` (below: `1-1.1`, hub `1-1`, port 1):
++
++| Way | Command |
++|---|---|
++| Hub port off and on: a fresh enumeration (a real power cut only if the hub switches port power) | `echo 1 > /sys/bus/usb/devices/1-1:1.0/1-1-port1/disable; sleep 2; echo 0 > /sys/bus/usb/devices/1-1:1.0/1-1-port1/disable` |
++| USB reset, then probe the driver again | `usbreset 0cf3:9271; echo 1-1.1:1.0 > /sys/bus/usb/drivers/ath9k_htc/bind` |
++| Deauthorise and authorise: no reset, so the device keeps any firmware it was sent | `echo 0 > /sys/bus/usb/devices/1-1.1/authorized; echo 1 > /sys/bus/usb/devices/1-1.1/authorized` |
++
++## Firmware
++
++Built into the kernel (`CONFIG_EXTRA_FIRMWARE`) from `board/ulanzi/d200/firmware/`, so a dongle finds it before the
++root filesystem is mounted. The licence files are next to them.
++
++| File | Source | Licence |
++|---|---|---|
++| `ath9k_htc/htc_9271-1.4.0.fw` | linux-firmware `20260916` | `LICENCE.open-ath9k-htc-firmware` |
++| `mediatek/mt7601u.bin` | linux-firmware `20260916` | `LICENCE.ralink_a_mediatek_company_firmware` (redistributable, not free) |
++| `regulatory.db` | wireless-regdb `2026.09.03` | ISC, `LICENSE.wireless-regdb` |
++
++## Fallbacks
++
++| Problem | What to do |
++|---|---|
++| `timeline.txt` shows `dr_mode peripheral` in host mode | U-Boot didn't apply the overlay: check its boot log on the UART |
++| Host mode, but no hub or dongle in `lsusb.txt` | Check the charger and the hub; `dmesg.txt` has the `dwc2` messages |
++| Dongle, but no `wlan0` | `dmesg.txt`: driver or firmware errors |
++| `wlan0`, but no address | `messages.txt` and `wpa-status.txt`: wrong SSID or passphrase, or no DHCP |
++| Watch it live | UART console ([recovery.md](recovery.md#2-with-a-uart)) |
++| No network at all | Back to a USB device with fastboot ([USB modes](#usb-modes)), or on the UART: `fw_setenv usb_mode device` |
++| Back to the normal firmware | Install a build without this branch ([flashing.md](flashing.md#from-maskrom)) |
+-- 
+2.43.0
+

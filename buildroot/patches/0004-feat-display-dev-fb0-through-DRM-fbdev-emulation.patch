@@ -1,0 +1,31 @@
+From 17d3f32216838382536e8572e5229b47b329c170 Mon Sep 17 00:00:00 2001
+From: Grzegorz Gajoch <gajoch@gmail.com>
+Date: Wed, 4 Nov 2026 04:36:02 +0100
+Subject: [PATCH 4/9] feat(display): /dev/fb0 through DRM fbdev emulation
+
+For programs that draw to a framebuffer device: 720x1280, 32 bpp. No
+framebuffer console. deckd keeps using DRM.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ board/ulanzi/d200/linux.config | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/board/ulanzi/d200/linux.config b/board/ulanzi/d200/linux.config
+index 10598d5..12c962e 100644
+--- a/board/ulanzi/d200/linux.config
++++ b/board/ulanzi/d200/linux.config
+@@ -161,8 +161,10 @@ CONFIG_DRM=y
+ CONFIG_DRM_PANEL_ROCKCHIP_CMD=y
+ CONFIG_DRM_ROCKCHIP=y
+ CONFIG_ROCKCHIP_RGB=y
++CONFIG_FB=y
+ CONFIG_BACKLIGHT_CLASS_DEVICE=y
+ CONFIG_BACKLIGHT_PWM=y
++# CONFIG_FRAMEBUFFER_CONSOLE is not set
+ # CONFIG_HID_SUPPORT is not set
+ CONFIG_USB=y
+ CONFIG_USB_DWC2=y
+-- 
+2.43.0
+

@@ -1,0 +1,2 @@
+# git am needs the patches byte for byte
+patches/*.patch -text

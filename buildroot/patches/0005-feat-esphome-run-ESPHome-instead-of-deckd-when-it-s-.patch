@@ -1,0 +1,197 @@
+From df0b4bdd1ad9f23a93cd4d9a911d46090dbebe4a Mon Sep 17 00:00:00 2001
+From: Grzegorz Gajoch <gajoch@gmail.com>
+Date: Wed, 4 Nov 2026 04:36:02 +0100
+Subject: [PATCH 5/9] feat(esphome): run ESPHome instead of deckd when it's
+ installed
+
+S70esphome: if /data/esphome/d200 (an ESPHome host-platform build) exists,
+stop deckd once it has confirmed a pending update, and run ESPHome,
+restarted when it exits, with logs to syslog. If
+/data/ulanzi-control/ulanzi-control exists too, a socat pty pair and that
+display daemon start first; when socat exits, both ends restart with it.
+
+While ESPHome runs, mdnsd advertises _esphomelib._tcp with ESPHome's TXT
+records, through /etc/mdns.d/esphome.service, a link into /run.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../d200/rootfs-overlay/etc/init.d/S70esphome | 146 ++++++++++++++++++
+ .../rootfs-overlay/etc/mdns.d/esphome.service |   1 +
+ configs/ulanzi_d200_defconfig                 |   2 +
+ 3 files changed, 149 insertions(+)
+ create mode 100755 board/ulanzi/d200/rootfs-overlay/etc/init.d/S70esphome
+ create mode 120000 board/ulanzi/d200/rootfs-overlay/etc/mdns.d/esphome.service
+
+diff --git a/board/ulanzi/d200/rootfs-overlay/etc/init.d/S70esphome b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S70esphome
+new file mode 100755
+index 0000000..4c13736
+--- /dev/null
++++ b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S70esphome
+@@ -0,0 +1,146 @@
++#!/bin/sh
++#
++# ESPHome (docs/esphome.md): if /data/esphome/d200, an ESPHome host-platform
++# build, exists, stop deckd, so nothing else uses the display (/dev/fb0) or
++# the keys (/dev/input/event0), and run ESPHome instead. While it runs, mdnsd
++# advertises it as _esphomelib._tcp.
++#
++# If /data/ulanzi-control/ulanzi-control (a display and keys daemon) exists
++# too, it runs as well, talking to ESPHome over a pty pair made by socat:
++# ESPHome opens /run/d200-esp, the daemon /run/d200-daemon. When socat exits
++# the ptys are gone, so both ends are killed and start again on the new ones.
++#
++# Each program is restarted when it exits (an ESPHome OTA update re-executes
++# it in place) and logs to syslog.
++#
++
++DIR=/data/esphome
++BIN=$DIR/d200
++UC_DIR=/data/ulanzi-control
++UC=$UC_DIR/ulanzi-control
++ESP_PTY=/run/d200-esp
++DAEMON_PTY=/run/d200-daemon
++PIDFILE=/var/run/esphome.pid
++# /etc/mdns.d/esphome.service links here; mdnsd skips it while it's missing
++SERVICE=/run/mdnsd/esphome.service
++# TXT records to add or change, as key=value lines
++TXT=$DIR/mdns.txt
++
++# The TXT records ESPHome devices send. mac: ESPHome's default for the host
++# platform (its mac_address option); version: from the binary
++advertise() {
++	version=$(grep -o -m 1 'ESPHome version [^ ]*' $BIN 2>/dev/null | cut -d ' ' -f 3)
++	mkdir -p ${SERVICE%/*}
++	{
++		echo "type _esphomelib._tcp"
++		echo "port 6053"
++		for kv in mac=983569abf679 "version=${version:-unknown}" platform=host board=host network=wifi; do
++			grep -q "^${kv%%=*}=" $TXT 2>/dev/null || echo "txt $kv"
++		done
++		sed -n 's/^\([a-z_]*=.*\)$/txt \1/p' $TXT 2>/dev/null
++	} > $SERVICE
++	killall -HUP mdnsd 2>/dev/null
++}
++
++# The programs, by syslog tag
++run_socat() {
++	sh -c "set -o pipefail; socat pty,link=$ESP_PTY,raw,echo=0 pty,link=$DAEMON_PTY,raw,echo=0 2>&1 |
++		logger -t socat"
++}
++
++run_ulanzi() {
++	cd $UC_DIR && ULANZI_SERIAL=$DAEMON_PTY sh -c 'set -o pipefail; ./ulanzi-control 2>&1 | logger -t ulanzi'
++}
++
++run_esphome() {
++	# an OTA update may leave the binary without its exec bit
++	chmod +x $BIN
++	cd $DIR && ESPHOME_PREFDIR=$DIR/prefs sh -c 'set -o pipefail; ./d200 2>&1 | logger -t esphome'
++}
++
++# Run program $1 until killed, like S60deckd: restart after 1 s, doubling up
++# to 30 s while it keeps dying within 10 s of starting
++loop() {
++	delay=1
++	while :; do
++		# with the daemon, the pty ends must exist first
++		if [ "$1" != socat ] && [ -f $UC ]; then
++			while [ ! -e $ESP_PTY ] || [ ! -e $DAEMON_PTY ]; do
++				sleep 1
++			done
++		fi
++		started=$(date +%s)
++		"run_$1"
++		status=$?
++		if [ "$1" = socat ]; then
++			rm -f $ESP_PTY $DAEMON_PTY
++			killall ulanzi-control d200 2>/dev/null
++		fi
++		[ $(($(date +%s) - started)) -ge 10 ] && delay=1
++		logger -t "$1" "exited with status $status, restarting in ${delay}s"
++		sleep $delay
++		delay=$((delay * 2))
++		[ $delay -gt 30 ] && delay=30
++	done
++}
++
++daemon() {
++	start-stop-daemon -S -q -b -m -p "/var/run/esphome-$1.pid" -x /bin/sh -- "$0" loop "$1"
++}
++
++supervise() {
++	# After an update deckd settles the trial boot once its first page is up
++	# (docs/ota.md); stopped before that, the update rolls back after 3 boots
++	for _ in $(seq 120); do
++		[ "$(fw_printenv -n upgrade_available 2>/dev/null)" = 1 ] || break
++		sleep 1
++	done
++	/etc/init.d/S60deckd stop >/dev/null
++	advertise
++	if [ -f $UC ]; then
++		daemon socat
++		daemon ulanzi
++	fi
++	loop esphome
++}
++
++start() {
++	[ -f $BIN ] || return 0
++	printf "Starting ESPHome: "
++	mkdir -p $DIR/prefs
++	if start-stop-daemon -S -q -b -m -p $PIDFILE -x /bin/sh -- "$0" supervise; then
++		echo "OK"
++	else
++		echo "FAIL"
++	fi
++}
++
++stop() {
++	printf "Stopping ESPHome: "
++	for p in $PIDFILE /var/run/esphome-socat.pid /var/run/esphome-ulanzi.pid; do
++		start-stop-daemon -K -q -p $p
++		rm -f $p
++	done
++	killall d200 ulanzi-control socat 2>/dev/null
++	for _ in $(seq 50); do
++		pidof d200 ulanzi-control socat >/dev/null || break
++		sleep 0.1
++	done
++	killall -9 d200 ulanzi-control socat 2>/dev/null
++	rm -f $SERVICE $ESP_PTY $DAEMON_PTY
++	killall -HUP mdnsd 2>/dev/null
++	echo "OK"
++}
++
++case "$1" in
++	start|stop|supervise)
++		"$1";;
++	loop)
++		loop "$2";;
++	restart|reload)
++		stop
++		start;;
++	*)
++		echo "Usage: $0 {start|stop|restart|reload}"
++		exit 1
++esac
+diff --git a/board/ulanzi/d200/rootfs-overlay/etc/mdns.d/esphome.service b/board/ulanzi/d200/rootfs-overlay/etc/mdns.d/esphome.service
+new file mode 120000
+index 0000000..ae10d86
+--- /dev/null
++++ b/board/ulanzi/d200/rootfs-overlay/etc/mdns.d/esphome.service
+@@ -0,0 +1 @@
++/run/mdnsd/esphome.service
+\ No newline at end of file
+diff --git a/configs/ulanzi_d200_defconfig b/configs/ulanzi_d200_defconfig
+index eb3ec2d..25b6153 100644
+--- a/configs/ulanzi_d200_defconfig
++++ b/configs/ulanzi_d200_defconfig
+@@ -95,3 +95,5 @@ BR2_PACKAGE_WPA_SUPPLICANT=y
+ BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
+ BR2_PACKAGE_WPA_SUPPLICANT_DEBUG_SYSLOG=y
+ BR2_PACKAGE_IW=y
++# pty pair between ESPHome and the display daemon (S70esphome)
++BR2_PACKAGE_SOCAT=y
+-- 
+2.43.0
+

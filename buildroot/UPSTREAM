@@ -1,0 +1,3 @@
+# The firmware the patches in patches/ apply to (sourced by build.sh)
+UPSTREAM_URL=https://github.com/riptidewave93/d200-buildroot
+UPSTREAM_COMMIT=04d95fbc888bda02ec13177bf1a2e72ebf5e8901

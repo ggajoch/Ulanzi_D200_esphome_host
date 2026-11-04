@@ -1,0 +1,198 @@
+From 384bb17c3da1cc535a3ea4edaa72c881559581de Mon Sep 17 00:00:00 2001
+From: Grzegorz Gajoch <gajoch@gmail.com>
+Date: Wed, 4 Nov 2026 04:36:02 +0100
+Subject: [PATCH 6/9] feat(debug): USB and WiFi debug tools
+
+- Linux: debugfs, usbmon, dynamic debug, ath debugging and ath9k_htc
+  debugfs. A patch makes the ath9k_htc debug mask writable at runtime, as the
+  kernel command line can't be changed.
+- usbutils (lsusb, and usbreset, which usbutils builds but doesn't install),
+  with libudev-zero.
+- S33wifi-diag: the USB, network and WiFi state of the first 3 minutes of
+  every boot, in /data/wifi-test/.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ board/ulanzi/d200/linux.config                |  5 ++
+ ...h9k_htc-make-the-debug-mask-writable.patch | 27 +++++++
+ .../rootfs-overlay/etc/init.d/S33wifi-diag    | 71 +++++++++++++++++++
+ configs/ulanzi_d200_defconfig                 |  3 +
+ external.mk                                   |  6 ++
+ 5 files changed, 112 insertions(+)
+ create mode 100644 board/ulanzi/d200/patches/linux/7.2.11/0021-wifi-ath9k_htc-make-the-debug-mask-writable.patch
+ create mode 100755 board/ulanzi/d200/rootfs-overlay/etc/init.d/S33wifi-diag
+
+diff --git a/board/ulanzi/d200/linux.config b/board/ulanzi/d200/linux.config
+index 12c962e..1727af5 100644
+--- a/board/ulanzi/d200/linux.config
++++ b/board/ulanzi/d200/linux.config
+@@ -127,7 +127,9 @@ CONFIG_NETDEVICES=y
+ # CONFIG_ETHERNET is not set
+ CONFIG_USB_RTL8152=y
+ CONFIG_USB_USBNET=y
++CONFIG_ATH_DEBUG=y
+ CONFIG_ATH9K_HTC=y
++CONFIG_ATH9K_HTC_DEBUGFS=y
+ CONFIG_MT7601U=y
+ CONFIG_INPUT_EVDEV=y
+ # CONFIG_KEYBOARD_ATKBD is not set
+@@ -167,6 +169,7 @@ CONFIG_BACKLIGHT_PWM=y
+ # CONFIG_FRAMEBUFFER_CONSOLE is not set
+ # CONFIG_HID_SUPPORT is not set
+ CONFIG_USB=y
++CONFIG_USB_MON=y
+ CONFIG_USB_DWC2=y
+ CONFIG_USB_GADGET=y
+ CONFIG_USB_CONFIGFS=y
+@@ -210,9 +213,11 @@ CONFIG_UBIFS_FS_ADVANCED_COMPR=y
+ CONFIG_DMA_CMA=y
+ CONFIG_CMA_SIZE_MBYTES=12
+ CONFIG_PRINTK_TIME=y
++CONFIG_DYNAMIC_DEBUG=y
+ # CONFIG_SYMBOLIC_ERRNAME is not set
+ # CONFIG_DEBUG_MISC is not set
+ # CONFIG_SECTION_MISMATCH_WARN_ONLY is not set
++CONFIG_DEBUG_FS=y
+ CONFIG_DEBUG_MEMORY_INIT=y
+ # CONFIG_RCU_TRACE is not set
+ # CONFIG_FTRACE is not set
+diff --git a/board/ulanzi/d200/patches/linux/7.2.11/0021-wifi-ath9k_htc-make-the-debug-mask-writable.patch b/board/ulanzi/d200/patches/linux/7.2.11/0021-wifi-ath9k_htc-make-the-debug-mask-writable.patch
+new file mode 100644
+index 0000000..4bda8e2
+--- /dev/null
++++ b/board/ulanzi/d200/patches/linux/7.2.11/0021-wifi-ath9k_htc-make-the-debug-mask-writable.patch
+@@ -0,0 +1,27 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Grzegorz Gajoch <gajoch@gmail.com>
++Date: Wed, 4 Nov 2026 03:00:25 +0100
++Subject: [PATCH] wifi: ath9k_htc: make the debug mask writable
++
++The debug mask can only be set on the kernel command line or when the
++module is loaded. Make the parameter writable in sysfs: a device probed
++after a change, such as one plugged in later, uses the new mask.
++
++Signed-off-by: Grzegorz Gajoch <gajoch@gmail.com>
++---
++ drivers/net/wireless/ath/ath9k/htc_drv_init.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/drivers/net/wireless/ath/ath9k/htc_drv_init.c b/drivers/net/wireless/ath/ath9k/htc_drv_init.c
++index 911eaa4f7..e028e7eb6 100644
++--- a/drivers/net/wireless/ath/ath9k/htc_drv_init.c
+++++ b/drivers/net/wireless/ath/ath9k/htc_drv_init.c
++@@ -23,7 +23,7 @@ MODULE_LICENSE("Dual BSD/GPL");
++ MODULE_DESCRIPTION("Atheros driver 802.11n HTC based wireless devices");
++ 
++ static unsigned int ath9k_debug = ATH_DBG_DEFAULT;
++-module_param_named(debug, ath9k_debug, uint, 0);
+++module_param_named(debug, ath9k_debug, uint, 0644);
++ MODULE_PARM_DESC(debug, "Debugging mask");
++ 
++ int htc_modparam_nohwcrypt;
+diff --git a/board/ulanzi/d200/rootfs-overlay/etc/init.d/S33wifi-diag b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S33wifi-diag
+new file mode 100755
+index 0000000..11e6312
+--- /dev/null
++++ b/board/ulanzi/d200/rootfs-overlay/etc/init.d/S33wifi-diag
+@@ -0,0 +1,71 @@
++#!/bin/sh
++#
++# ESPHome image (docs/esphome.md): for the first DURATION seconds after boot,
++# save the USB mode, USB devices, network and WiFi state every EVERY seconds
++# to /data/wifi-test/<boot number>/, to read later over USB SSH. timeline.txt
++# grows; the other files hold the latest state. Keeps the last KEEP boots.
++#
++
++DIR=/data/wifi-test
++DURATION=180
++EVERY=10
++KEEP=10
++PIDFILE=/var/run/wifi-diag.pid
++
++snapshot() {
++	{
++		echo "== uptime $(cut -d' ' -f1 /proc/uptime)s"
++		echo "usb: dr_mode $(tr -d '\0' < /proc/device-tree/usb@ff400000/dr_mode)," \
++			"usb_mode=$(fw_printenv -n usb_mode 2>/dev/null)," \
++			"gadget $(cat /sys/class/udc/*/state 2>/dev/null)"
++		echo "interfaces: $(ls /sys/class/net | tr '\n' ' ')"
++	} >> "$1/timeline.txt"
++	dmesg > "$1/dmesg.txt"
++	cp /var/log/messages "$1/messages.txt" 2>/dev/null
++	{ lsusb; echo; lsusb -t; } > "$1/lsusb.txt" 2>&1
++	{ ip addr; echo; ip route; } > "$1/ip.txt" 2>&1
++	iw dev > "$1/iw-dev.txt" 2>&1
++	wpa_cli -i wlan0 status > "$1/wpa-status.txt" 2>&1
++	sync
++}
++
++collect() {
++	mkdir -p $DIR || return 1
++	n=$(cat $DIR/last 2>/dev/null)
++	case "$n" in ''|*[!0-9]*) n=0 ;; esac
++	n=$((n + 1))
++	echo $n > $DIR/last
++	rm -rf "${DIR:?}/$((n - KEEP))"
++	mkdir -p $DIR/$n
++	# debugfs, for usbmon and the dwc2 and ath9k_htc files; the USB
++	# controller's settings once per boot
++	mountpoint -q /sys/kernel/debug || mount -t debugfs debugfs /sys/kernel/debug
++	for f in params hw_params; do
++		echo "== $f"
++		cat /sys/kernel/debug/usb/ff400000.usb/$f
++	done > $DIR/$n/dwc2.txt 2>&1
++	for _ in $(seq $((DURATION / EVERY))); do
++		snapshot $DIR/$n
++		sleep $EVERY
++	done
++	snapshot $DIR/$n
++}
++
++start() {
++	printf "Starting WiFi test logs: "
++	if start-stop-daemon -S -q -b -m -p $PIDFILE -x /bin/sh -- "$0" collect; then
++		echo "OK"
++	else
++		echo "FAIL"
++	fi
++}
++
++case "$1" in
++	start|collect)
++		"$1";;
++	stop|restart|reload)
++		;;
++	*)
++		echo "Usage: $0 {start|stop|restart|reload}"
++		exit 1
++esac
+diff --git a/configs/ulanzi_d200_defconfig b/configs/ulanzi_d200_defconfig
+index 25b6153..a6a68f4 100644
+--- a/configs/ulanzi_d200_defconfig
++++ b/configs/ulanzi_d200_defconfig
+@@ -95,5 +95,8 @@ BR2_PACKAGE_WPA_SUPPLICANT=y
+ BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
+ BR2_PACKAGE_WPA_SUPPLICANT_DEBUG_SYSLOG=y
+ BR2_PACKAGE_IW=y
++# usbutils needs a libudev
++BR2_PACKAGE_LIBUDEV_ZERO=y
++BR2_PACKAGE_USBUTILS=y
+ # pty pair between ESPHome and the display daemon (S70esphome)
+ BR2_PACKAGE_SOCAT=y
+diff --git a/external.mk b/external.mk
+index 6dfb7db..f923983 100644
+--- a/external.mk
++++ b/external.mk
+@@ -54,3 +54,9 @@ define D200_LINUX_INSTALL_FIRMWARE
+ endef
+ LINUX_POST_PATCH_HOOKS += D200_LINUX_INSTALL_FIRMWARE
+ 
++# usbreset (USB port reset by ID or bus/device), which usbutils builds but
++# doesn't install: for re-probing USB devices in host mode (docs/esphome.md)
++define D200_USBUTILS_INSTALL_USBRESET
++	$(INSTALL) -D -m 0755 $(@D)/buildroot-build/usbreset $(TARGET_DIR)/usr/bin/usbreset
++endef
++USBUTILS_POST_INSTALL_TARGET_HOOKS += D200_USBUTILS_INSTALL_USBRESET
+-- 
+2.43.0
+
