@@ -1,0 +1,285 @@
+# ESPHome running on the Ulanzi D200's RK3308 itself (host platform, aarch64 Linux),
+# with this repo's ulanzi_d200 component. The screen and keys belong to the
+# ulanzi-control daemon (../../daemon); the two talk NDJSON over a socat pty pair:
+#   ESPHome -> /run/d200-esp, daemon -> /run/d200-daemon
+# Run: ESPHOME_PREFDIR=/data/esphome/prefs /data/esphome/d200
+#
+# Keys (5 cols x 3 rows, 13 is double-wide):
+#   [ 0] [ 1] [ 2] [ 3] [ 4 NEXT]
+#   [ 5] [ 6] [ 7] [ 8] [ 9 PREV]
+#   [10 HOME] [11] [12] [13 status bar ═══]
+# Pages: 0 Zewnątrz (0-2 outdoor lights, 3 all three, 5 Kuchnia),
+#        1 Warsztat (0 workshop power, 1 compressor: hold 1 s).
+# Each light/switch key: d200-toggle.yaml. The clock's time zone is the daemon's
+# /data/ulanzi-control/config/timezone (Europe/Warsaw).
+
+substitutions:
+  # ===== Home Assistant entities and key labels =====
+  # The author's own setup (Polish labels): put your entities and labels here
+  # Zewnątrz (outdoor lights); the "Wszystkie" key switches these three
+  out_1: light.relayboard_2_light_podw_rko_drzwi
+  out_1_name: "Drzwi"
+  out_2: light.relayboard_2_light_podw_rko_warsztat
+  out_2_name: "Warsztat"
+  out_3: light.relayboard_2_light_podw_rko_przej_cie
+  out_3_name: "Przejście"
+  # Test key on the Zewnątrz page (HA light group)
+  kitchen: light.kuchnia_lights
+  kitchen_name: "Kuchnia"
+  # Warsztat (workshop)
+  workshop_power: switch.relayboard_warsztat_warsztat
+  workshop_power_name: "Prąd warsztat"
+  compressor: switch.relayboard_warsztat_kompresor
+  compressor_name: "Kompresor"
+
+esphome:
+  name: d200
+  friendly_name: Ulanzi D200
+  build_flags:
+    - -O2                  # the host build has no default optimisation (it would be -O0)
+    - -static-libstdc++    # the D200 image ships no libstdc++.so; glibc stays dynamic
+    - -static-libgcc
+    - -Wl,-s               # strip: the same file goes out by scp and by OTA
+
+host:
+  # Locally administered, one per device: Home Assistant identifies the device by it
+  mac_address: "02:D2:00:0A:B5:6D"
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  reboot_timeout: 0s
+
+ota:
+  # Host OTA (TCP 8082): writes <exe>.ota.new, checks the ELF machine matches the
+  # running binary, renames it over the exe and re-execs. Encrypted with the api key.
+  - platform: esphome
+
+uart:
+  id: uart_bus
+  port: /run/d200-esp
+  baud_rate: 1500000
+
+external_components:
+  # The component from this repo (build.sh copies components/ along with this file)
+  - source:
+      type: local
+      path: ../../components
+    components: [ulanzi_d200]
+  # Or without a checkout of this repo:
+  # - source: github://<owner>/Ulanzi_D200_esphome_host
+  #   components: [ulanzi_d200]
+
+packages:
+  # Page 0: Zewnątrz
+  out_1: !include {file: d200-toggle.yaml, vars: {key: out_1, entity: "${out_1}", label: "${out_1_name}", page: 0, position: 0, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
+  out_2: !include {file: d200-toggle.yaml, vars: {key: out_2, entity: "${out_2}", label: "${out_2_name}", page: 0, position: 1, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
+  out_3: !include {file: d200-toggle.yaml, vars: {key: out_3, entity: "${out_3}", label: "${out_3_name}", page: 0, position: 2, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
+  kitchen: !include {file: d200-toggle.yaml, vars: {key: kitchen, entity: "${kitchen}", label: "${kitchen_name}", page: 0, position: 5, icon_on: ceiling-light, icon_off: ceiling-light-outline}}
+  # Page 1: Warsztat (the compressor key is below: hold-to-toggle)
+  workshop_power: !include {file: d200-toggle.yaml, vars: {key: workshop_power, entity: "${workshop_power}", label: "${workshop_power_name}", page: 1, position: 0, icon_on: power-plug, icon_off: power-plug-off, color_on: "#22AA44"}}
+
+ulanzi_d200:
+  id: d200
+  uart_id: uart_bus
+
+  on_connected:
+    then:
+      - lambda: |-
+          id(d200).send_command("page", "rename", "0", "Zewnątrz");
+          id(d200).send_command("page", "rename", "1", "Warsztat");
+
+  sections:
+    # ===== Page 0: Zewnątrz =====
+    # 3: all outdoor lights (no HA group: one action on the three). ON if any is on;
+    # a press turns all three off, or all on when all are off
+    - position: 3
+      page: 0
+      on_press:
+        then:
+          - if:
+              condition:
+                lambda: 'return id(sw_out_1).state || id(sw_out_2).state || id(sw_out_3).state;'
+              then:
+                - homeassistant.action:
+                    action: light.turn_off
+                    data:
+                      entity_id: "${out_1},${out_2},${out_3}"
+              else:
+                - homeassistant.action:
+                    action: light.turn_on
+                    data:
+                      entity_id: "${out_1},${out_2},${out_3}"
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(sw_out_1).state || id(sw_out_2).state || id(sw_out_3).state;'
+          color: "#FFAA00"
+          icon_id: "lightbulb-group"
+          icon_color: "#000000"
+          text: "Wszystkie"
+          text_color: "#000000"
+          text2: "ON"
+          text2_color: "#000000"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "lightbulb-group-off"
+          icon_color: "#777777"
+          text: "Wszystkie"
+          text_color: "#BBBBBB"
+          text2: "OFF"
+          text2_color: "#777777"
+
+    # ===== Page 1: Warsztat =====
+    # 1: compressor, toggles only after a 1 s hold (released earlier: nothing happens)
+    - position: 1
+      page: 1
+      on_press:
+        then:
+          - script.execute: compressor_hold
+      on_release:
+        then:
+          - script.stop: compressor_hold
+      pressed_style:
+        color: "#666666"
+        text2_color: "#FFFFFF"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(sw_compressor).state;'
+          color: "#DD2222"
+          icon_id: "air-filter"
+          icon_color: "#FFFFFF"
+          text: "${compressor_name}"
+          text_color: "#FFFFFF"
+          text2: "ON (trzymaj)"
+          text2_color: "#FFFFFF"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "air-filter"
+          icon_color: "#777777"
+          text: "${compressor_name}"
+          text_color: "#BBBBBB"
+          text2: "OFF (trzymaj)"
+          text2_color: "#777777"
+
+    # ===== All pages: navigation and status =====
+    - position: 4
+      page: -1
+      on_press:
+        then:
+          - lambda: id(d200).navigate_page_next();
+      pressed_style:
+        color: "#4444AA"
+        icon_color: "#FFFFFF"
+      layouts:
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "chevron-right"
+          icon_color: "#7777CC"
+          text: "Dalej"
+          text_color: "#7777CC"
+
+    - position: 9
+      page: -1
+      on_press:
+        then:
+          - lambda: id(d200).navigate_page_prev();
+      pressed_style:
+        color: "#4444AA"
+        icon_color: "#FFFFFF"
+      layouts:
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "chevron-left"
+          icon_color: "#7777CC"
+          text: "Wstecz"
+          text_color: "#7777CC"
+
+    - position: 10
+      page: -1
+      on_press:
+        then:
+          - lambda: id(d200).navigate_page_jump(0);
+      pressed_style:
+        color: "#FF9944"
+        icon_color: "#000000"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(d200).get_current_page() == 0;'
+          color: "#2A1A0A"
+          icon_id: "home"
+          icon_color: "#FF9944"
+          text: "Start"
+          text_color: "#FF9944"
+        - widget: entity_view
+          color: "#111111"
+          icon_id: "home-outline"
+          icon_color: "#888888"
+          text: "Start"
+          text_color: "#888888"
+
+    - position: 13
+      page: -1
+      layouts:
+        - widget: status
+          items:
+            - clock
+            - page
+          color: "#111122"
+          text_color: "#AACCFF"
+
+script:
+  - id: compressor_hold
+    mode: restart
+    then:
+      - delay: 1s
+      - switch.toggle: sw_compressor
+
+switch:
+  # Compressor: same idiom as d200-toggle.yaml, but its key needs a hold (see above)
+  - platform: template
+    id: sw_compressor
+    internal: true
+    optimistic: true
+    restore_mode: DISABLED
+    turn_on_action:
+      - homeassistant.action:
+          action: homeassistant.turn_on
+          data:
+            entity_id: ${compressor}
+    turn_off_action:
+      - homeassistant.action:
+          action: homeassistant.turn_off
+          data:
+            entity_id: ${compressor}
+
+binary_sensor:
+  - platform: homeassistant
+    id: ha_compressor
+    entity_id: ${compressor}
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        - lambda: id(sw_compressor).publish_state(x);
+
+  - platform: template
+    id: d200_connected
+    name: "Display Connected"
+    device_class: connectivity
+    lambda: 'return id(d200).is_connected();'
+
+sensor:
+  - platform: template
+    name: "Current Page"
+    icon: mdi:book-open-page-variant
+    accuracy_decimals: 0
+    lambda: 'return id(d200).get_current_page();'
+    update_interval: 5s
+
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s

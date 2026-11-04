@@ -1,0 +1,66 @@
+# One D200 key that toggles a Home Assistant entity (light, switch, ...), in mapero's
+# idiom: an internal template switch calls HA, and a homeassistant binary_sensor keeps
+# it in sync, so the key reacts at once and then follows the real state.
+#
+# Include from d200.yaml:
+#   name: !include {file: d200-toggle.yaml, vars: {key: ..., entity: ..., label: ..., page: ..., position: ...}}
+# key must be unique (it names the ids sw_<key> and ha_<key>).
+defaults:
+  icon_on: lightbulb-on
+  icon_off: lightbulb-outline
+  color_on: "#FFAA00"       # background while on
+  text_color_on: "#000000"
+
+switch:
+  - platform: template
+    id: sw_${key}
+    internal: true           # HA already has the entity itself
+    optimistic: true
+    restore_mode: DISABLED   # never switch anything at boot; the state comes from HA
+    turn_on_action:
+      - homeassistant.action:
+          action: homeassistant.turn_on
+          data:
+            entity_id: ${entity}
+    turn_off_action:
+      - homeassistant.action:
+          action: homeassistant.turn_off
+          data:
+            entity_id: ${entity}
+
+binary_sensor:
+  - platform: homeassistant
+    id: ha_${key}
+    entity_id: ${entity}
+    trigger_on_initial_state: true
+    on_state:
+      then:
+        - lambda: id(sw_${key}).publish_state(x);
+
+ulanzi_d200:
+  sections:
+    - position: ${position}
+      page: ${page}
+      on_press:
+        then:
+          - switch.toggle: sw_${key}
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(sw_${key}).state;'
+          color: "${color_on}"
+          icon_id: "${icon_on}"
+          icon_color: "${text_color_on}"
+          text: "${label}"
+          text_color: "${text_color_on}"
+          text2: "ON"
+          text2_color: "${text_color_on}"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "${icon_off}"
+          icon_color: "#777777"
+          text: "${label}"
+          text_color: "#BBBBBB"
+          text2: "OFF"
+          text2_color: "#777777"

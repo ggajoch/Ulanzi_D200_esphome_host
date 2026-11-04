@@ -1,0 +1,3 @@
+# Builds run on Linux (WSL included): keep LF in the working tree even with core.autocrlf=true
+* text=auto eol=lf
+*.bat text eol=crlf
