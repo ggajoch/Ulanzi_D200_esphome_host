@@ -4,10 +4,13 @@
 #   ESPHome -> /run/d200-esp, daemon -> /run/d200-daemon
 # Run: ESPHOME_PREFDIR=/data/esphome/prefs /data/esphome/d200
 #
-# Keys (5 cols x 3 rows, 13 is double-wide):
-#   [ 0] [ 1] [ 2] [ 3] [ 4 NEXT]
-#   [ 5] [ 6] [ 7] [ 8] [ 9 PREV]
-#   [10 HOME] [11] [12] [13 status bar ═══]
+# Mounted vertically: rotation: 90 (the D200 turned 90° clockwise). Keys as the viewer
+# sees them (3 cols x 5 rows; 13, the big key, is two rows high):
+#   [ 0] [ 1] [ 2]
+#   [ 3] [ 4] [ 5]
+#   [ 6] [ 7] [ 8]
+#   [13] [ 9 HOME] [10]
+#   [13] [11 PREV] [12 NEXT]    13: status bar, clock over page name
 # Pages: 0 Zewnątrz (0-2 outdoor lights, 3 all three, 5 Kuchnia),
 #        1 Warsztat (0 workshop power, 1 compressor: hold 1 s).
 # Each light/switch key: d200-toggle.yaml. The clock's time zone is the daemon's
@@ -85,6 +88,7 @@ packages:
 ulanzi_d200:
   id: d200
   uart_id: uart_bus
+  rotation: 90   # mounted vertically: positions are numbered as the viewer reads them
 
   on_connected:
     then:
@@ -157,8 +161,8 @@ ulanzi_d200:
           text: "${compressor_name}"
           text_color: "#BBBBBB"
 
-    # ===== All pages: navigation and status =====
-    - position: 4
+    # ===== All pages: navigation (bottom right) and status (bottom left) =====
+    - position: 12
       page: -1
       on_press:
         then:
@@ -174,7 +178,7 @@ ulanzi_d200:
           text: "Dalej"
           text_color: "#7777CC"
 
-    - position: 9
+    - position: 11
       page: -1
       on_press:
         then:
@@ -190,7 +194,7 @@ ulanzi_d200:
           text: "Wstecz"
           text_color: "#7777CC"
 
-    - position: 10
+    - position: 9
       page: -1
       on_press:
         then:

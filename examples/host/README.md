@@ -15,18 +15,22 @@ Home Assistant ──API 6053──▶ /data/esphome/d200 ──/run/d200-esp �
 | `secrets.yaml.example` | template for `secrets.yaml` (`api_encryption_key`); `build.sh` generates one if missing |
 | `build.sh` | builds `../../components` + `d200.yaml` and `../../daemon` into `~/d200/esphome/out/{d200,ulanzi-control}` |
 | `deploy.sh` | `build.sh`, then ESPHome OTA to `$DEVICE` |
-| `screenshots/` | `/dev/fb0` dumps, turned to landscape |
+| `screenshots/` | `/dev/fb0` dumps, turned the way the mounted D200 is seen (`rotation: 90`) |
 
 ![Page 0](screenshots/d200-page0-zewnatrz.png)
 
 ## Keys
 
 The config is the author's own (Polish labels). Replace the `substitutions:` with your entities.
+The D200 hangs vertically, turned 90° clockwise (`rotation: 90`, see
+[docs/configuration.md](../../docs/configuration.md#rotation)); positions follow the viewer's reading order:
 
 ```
-[ 0] [ 1] [ 2] [ 3] [ 4 Dalej ]      Zewnątrz: 0-2 outdoor lights, 3 all three, 5 Kuchnia
-[ 5] [ 6] [ 7] [ 8] [ 9 Wstecz]      Warsztat: 0 workshop power, 1 compressor (hold 1 s)
-[10 Start] [11] [12] [13 clock + page]
+[ 0] [ 1] [ 2]                     Zewnątrz: 0-2 outdoor lights, 3 all three, 5 Kuchnia
+[ 3] [ 4] [ 5]                     Warsztat: 0 workshop power, 1 compressor (hold 1 s)
+[ 6] [ 7] [ 8]
+[13 clock] [ 9 Start ] [10]
+[13 page ] [11 Wstecz] [12 Dalej]
 ```
 
 Home Assistant must let the device call actions: ESPHome integration → the device → Configure →
