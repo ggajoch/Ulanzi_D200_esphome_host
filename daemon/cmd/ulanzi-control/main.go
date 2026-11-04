@@ -508,11 +508,17 @@ func changeValue(delta int) {
 
 // defaultKeyMapKeys are the key codes in reading order, as the mainline kernel's
 // matrix keypad in d200-buildroot reports them: KEY_F13..KEY_F24, KEY_PROG1, KEY_PROG2.
-// (The stock firmware used 29, 15, 14, 13, 12, 11, 10, 9, 8, 7, 34, 33, 31, 30.)
 // Overridden by config/keymap.json after user calibration.
 var defaultKeyMapKeys = []int{183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 148, 149}
 
+// stockKeyMapKeys are the stock Ulanzi firmware's codes in reading order. They don't
+// overlap the mainline codes, so both sets are loaded and one daemon runs on either firmware.
+var stockKeyMapKeys = []int{29, 15, 14, 13, 12, 11, 10, 9, 8, 7, 34, 33, 31, 30}
+
 func loadKeyMap() {
+	for i, code := range stockKeyMapKeys {
+		keyMap[uint16(code)] = i
+	}
 	km := KeyMapJSON{Keys: defaultKeyMapKeys}
 	if file, err := os.ReadFile(KEYMAP_FILE); err == nil {
 		if err := json.Unmarshal(file, &km); err != nil {
