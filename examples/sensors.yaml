@@ -387,7 +387,9 @@ ulanzi_d200:
             }
             return {std::string("#888888")};
 
-    # Position 5 — Chips: quick overview of all climate values
+    # Position 5 — Chips: a legend of the climate values on this page.
+    # Chip labels are static strings (sent once); live values belong in
+    # entity_view / gauge / line_graph widgets, as on the keys above.
     - position: 5
       page: 1
       layouts:
@@ -395,31 +397,13 @@ ulanzi_d200:
           color: "#111122"
           chips:
             - icon_id: "home-thermometer-outline"
-              label: !lambda |-
-                if (id(ha_temp_living).has_state()) {
-                  char buf[8];
-                  snprintf(buf, sizeof(buf), "%.1fC", id(ha_temp_living).state);
-                  return {std::string(buf)};
-                }
-                return {std::string("--")};
+              label: "Temp"
               bg_color: "#2A1A0A"
             - icon_id: "water-percent"
-              label: !lambda |-
-                if (id(ha_humidity).has_state()) {
-                  char buf[8];
-                  snprintf(buf, sizeof(buf), "%.0f%%", id(ha_humidity).state);
-                  return {std::string(buf)};
-                }
-                return {std::string("--")};
+              label: "Hum"
               bg_color: "#0A1A2A"
             - icon_id: "molecule-co2"
-              label: !lambda |-
-                if (id(ha_co2).has_state()) {
-                  char buf[8];
-                  snprintf(buf, sizeof(buf), "%.0f", id(ha_co2).state);
-                  return {std::string(buf)};
-                }
-                return {std::string("--")};
+              label: "CO2"
               bg_color: "#1A1A0A"
 
     # =========================================================================
