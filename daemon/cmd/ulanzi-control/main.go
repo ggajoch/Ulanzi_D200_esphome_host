@@ -823,7 +823,8 @@ func drawStatusBar(img *image.RGBA, rect image.Rectangle, s state.ButtonState, i
 				pageLabel = fmt.Sprintf("%d/%d", current+1, len(pages))
 			}
 			ui.DrawIcon(img, slotCX-35, cy, 36, "book-open-page-variant-outline", textCol)
-			ui.DrawText(img, slotCX+20, cy, 28, pageLabel, textCol)
+			// Start right of the icon: a centred label longer than ~4 characters ran over it
+			ui.DrawTextLeft(img, slotCX-10, cy, 28, pageLabel, textCol)
 		default:
 			// Unknown item: render s.Text or the item name
 			txt := s.Text
