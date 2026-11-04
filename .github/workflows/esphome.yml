@@ -29,11 +29,11 @@ jobs:
 
       - name: Create dummy secrets
         run: |
-          cat > examples/secrets.yaml <<'EOF'
+          cat > examples/secrets.yaml <<EOF
           wifi_ssid: "CI_TestNetwork"
           wifi_password: "CI_TestPassword"
           ap_password: "CI_FallbackPassword"
-          api_encryption_key: "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTE="
+          api_encryption_key: "$(head -c32 /dev/urandom | base64)"
           ota_password: "CI_OTAPassword"
           EOF
 
