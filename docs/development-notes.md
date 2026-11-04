@@ -71,6 +71,10 @@ The ESPHome process's own RSS and CPU have not been measured yet.
 1. ESPHome OTA carries only the ESPHome binary. A daemon change is copied to `/data/ulanzi-control/` by hand.
 2. The clock's time zone lives in the daemon (`/data/ulanzi-control/config/timezone` or `TZ`; the image has no
    zoneinfo, so the daemon embeds Go's). It belongs in the firmware (`TZ` or `BR2_TARGET_LOCALTIME`).
-3. WiFi stability has only been tested over short runs.
-4. Possible next step: native ESPHome components for `/dev/fb0` (display, LVGL), `/dev/input/event0` (keys) and
+3. WiFi stability has only been tested over short runs. Weak signal (-69 dBm) made a 20 MB firmware upload take
+   over 2 minutes; use a long `curl -m` for the update page.
+4. Rotation isn't stored by the daemon: after a daemon restart it draws at 0° until ESPHome re-sends the rotation
+   (a short flash). Gauge and line graph use only the middle square of the tall key at 90°/270°; chips,
+   notification and side-by-side in a tall key were checked only in offscreen renders.
+5. Possible next step: native ESPHome components for `/dev/fb0` (display, LVGL), `/dev/input/event0` (keys) and
    the sysfs backlight, which would replace the daemon and socat with a single process.
