@@ -21,33 +21,23 @@ Two variants share the component and the daemon: **host** (this fork: `buildroot
 | Drawing, fonts, icons, key-code map, status bar, clock | `daemon/` (`pkg/ui/`, `cmd/ulanzi-control/main.go`) | daemon deploy |
 | NDJSON protocol | both sides together: `components/ulanzi_d200/ulanzi_d200.cpp` and `daemon/pkg/transport/commands.go` | both deploys |
 | OS: kernel config, drivers, DT, init scripts, USB mode, WiFi, NTP, SSH, packages | d200-buildroot dev tree → `buildroot/patches/` | firmware workflow |
-| Per-device settings | on the D200: `/data/wpa_supplicant.conf`, `/data/ntp.conf`, `/data/ssh/authorized_keys`, `/data/ulanzi-control/config/timezone`, `/data/esphome/mdns.txt` | edit in place, restart the service |
-
-## Environment
-
-All builds run in the WSL2 distro `wsl2` (Ubuntu), with work dirs on ext4, never `/mnt/c`. From Git Bash:
-
-```bash
-MSYS_NO_PATHCONV=1 wsl.exe -d wsl2 -- bash -s <<'EOF'
-cd /mnt/c/Users/gregg/repos/ulanzi && ...
-EOF
-```
-
-Inside a WSL heredoc, `ssh` swallows the rest of the script: use `ssh -n` or `< /dev/null`.
+| Per-device settings | on the D200: `/data/wpa_supplicant.conf`, `/data/ntp.conf`, `/data/ulanzi-control/config/timezone`, `/data/esphome/mdns.txt` | edit in place, restart the service |
 
 ## Workflows
 
+Builds need Linux (or WSL2) with the work dirs on a Linux file system. Machine-specific setup, if any, is in the
+git-ignored `CLAUDE.local.md`.
+
 **ESPHome deploy** (YAML or component changes): `DEVICE=<ip> bash examples/host/deploy.sh` builds and OTAs
-(about 1.5 min). `examples/host/build.sh` alone builds both binaries into `~/d200/esphome/out/`. It needs the D200
-image's Buildroot host toolchain in `BR_HOST` (default `~/d200/d200-buildroot/BuildEnv/output-debug/host`; with
-`buildroot/build.sh` it is `~/d200-buildroot-esphome/BuildEnv/output-debug/host`), so the binary matches the
+(about 1.5 min). `examples/host/build.sh` alone builds both binaries into `$WORK/out/`. Set `BR_HOST` to the
+firmware build's Buildroot host dir (`<firmware work tree>/BuildEnv/output-debug/host`), so the binary matches the
 device's glibc. Keep its flags: `-O2`, static libstdc++/libgcc, static OpenSSL `libcrypto` (needed by OTA), stripped.
 
-**Daemon deploy**: the OTA carries only ESPHome. Copy `~/d200/esphome/out/ulanzi-control` to
-`/data/ulanzi-control/`, then `kill $(pidof ulanzi-control)`; `S70esphome` restarts it.
+**Daemon deploy**: the OTA carries only ESPHome. Copy `$WORK/out/ulanzi-control` to `/data/ulanzi-control/`, then
+`kill $(pidof ulanzi-control)`; `S70esphome` restarts it.
 
 **Firmware workflow** (`buildroot/` = patch series on riptidewave93/d200-buildroot, pin in `buildroot/UPSTREAM`):
-1. Change and commit in the dev tree `~/d200/d200-buildroot` (branch `wifi-test`, equal to `buildroot/patches/`),
+1. Change and commit in a d200-buildroot work tree with the series applied (`buildroot/build.sh` creates one),
    following that repo's `AGENTS.md`. Build with `make build FLAVOR=debug` (or `make linux-rebuild`, etc.).
 2. Re-export the whole series: `rm buildroot/patches/*.patch; git format-patch --binary <UPSTREAM_COMMIT>..HEAD -o <repo>/buildroot/patches`, then commit here.
 3. Install the `output/<date>-debug/*-update.tar` through deckd's update page:
@@ -60,7 +50,6 @@ device's glibc. Keep its flags: `-O2`, static libstdc++/libgcc, static OpenSSL `
 ## Device
 
 - **SSH:** `root`, no password, over every interface (USB, WiFi, Ethernet): the device belongs on a trusted LAN.
-  Keys in `/data/ssh/authorized_keys` also work.
 - **USB modes:** in USB host mode (default, `usb_mode=host` in the U-Boot env) the device is on WiFi/Ethernet. In USB
   device mode (`fw_setenv usb_mode device`, reboot) the PC sees a USB network link instead. Recovery:
   `buildroot/README.md`.

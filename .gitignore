@@ -32,3 +32,4 @@ Thumbs.db
 
 # Local dumps of the stock D200 firmware (proprietary)
 backup/
+CLAUDE.local.md
