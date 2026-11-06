@@ -81,6 +81,10 @@ Linux or WSL, after a [buildroot](../../buildroot/README.md) build (its toolchai
 DEVICE=<D200 IP> ./deploy.sh     # build both, OTA the ESPHome binary
 ```
 
+`CONF=<dir>` builds a config kept elsewhere instead of this one (`d200.yaml`, its packages and header,
+`secrets.yaml`), two levels below the repo root like this folder: e.g. your own setup in the git-ignored
+`private/esphome` (`CONF=private/esphome DEVICE=<D200 IP> examples/host/deploy.sh`).
+
 `build.sh` installs ESPHome 2026.10.2 in a venv, Go and a static OpenSSL `libcrypto` (for OTA) under `~/d200/`.
 Override with `WORK`, `BR_HOST`, `GOROOT_DIR`, `ESPHOME_VERSION`. ESPHome is built with the Buildroot
 aarch64 toolchain, `-O2`, libstdc++/libgcc/libcrypto linked statically, stripped; the daemon is a static

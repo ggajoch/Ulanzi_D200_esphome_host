@@ -6,10 +6,13 @@
 #
 #   ./build.sh
 #   WORK=... BR_HOST=... GOROOT_DIR=... ./build.sh
+#   CONF=<dir> ./build.sh    a config kept elsewhere (d200.yaml, its packages and header, secrets.yaml),
+#                            two levels below the repo root like this one, e.g. CONF=private/esphome
 set -euo pipefail
 
 SRC=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$SRC/../.." && pwd)
+CONF=$(cd "${CONF:-$SRC}" && pwd)
 WORK=${WORK:-$HOME/d200/esphome}
 # Buildroot host dir of the D200 image (../../buildroot/README.md): same glibc as the device. Used read-only.
 BR_HOST=${BR_HOST:-$HOME/d200/d200-buildroot/BuildEnv/output-debug/host}
@@ -60,16 +63,18 @@ fi
   -o "$WORK/out/ulanzi-control" ./cmd/ulanzi-control)
 
 # The API/OTA key lives outside git; make one on first build
-if [ ! -f "$SRC/secrets.yaml" ]; then
-  echo "api_encryption_key: \"$(head -c32 /dev/urandom | base64)\"" > "$SRC/secrets.yaml"
-  echo "generated $SRC/secrets.yaml"
+if [ ! -f "$CONF/secrets.yaml" ]; then
+  echo "api_encryption_key: \"$(head -c32 /dev/urandom | base64)\"" > "$CONF/secrets.yaml"
+  echo "generated $CONF/secrets.yaml"
 fi
 
 # Build on ext4, not on /mnt/c: the component and the config, in the repo's layout
 # (d200.yaml finds the component at ../../components)
 B=$WORK/build
 rm -rf "$B/components" && cp -r "$REPO/components" "$B/"
-mkdir -p "$B/examples/host" && cp "$SRC"/*.yaml "$SRC"/*.h "$B/examples/host/"   # d200.yaml, its packages and header, secrets.yaml
+mkdir -p "$B/examples/host" && rm -f "$B/examples/host"/*.yaml "$B/examples/host"/*.h   # keep .esphome/ (build cache)
+cp "$CONF"/*.yaml "$B/examples/host/"   # d200.yaml, its packages, secrets.yaml
+cp "$CONF"/*.h "$B/examples/host/" 2>/dev/null || true   # a header, if the config has one
 
 # The host platform compiles with whatever CC/CXX/AR/... say (ninja, no PlatformIO);
 # extra words in CC/CXX reach every compile and the link. Optimisation and static

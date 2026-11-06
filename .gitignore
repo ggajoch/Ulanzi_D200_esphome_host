@@ -33,3 +33,7 @@ Thumbs.db
 # Local dumps of the stock D200 firmware (proprietary)
 backup/
 CLAUDE.local.md
+
+# One user's own device setup (config with real keys, files for /data, HA/Node-RED exports): build it
+# with CONF=private/esphome examples/host/deploy.sh
+/private/
