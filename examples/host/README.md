@@ -40,8 +40,8 @@ The screen stays dark until yard motion, a door opening or closing, or a key pre
 60 s after the last door or key, but not before 5 min after the last motion (the yard sensors report
 someone standing still in bursts; Node-RED's motion lights also hold 5 min). In the dark the first
 press only wakes it (`wake_on_press`).
-The intercom ringing plays `/data/ulanzi-control/config/ring.gif` over the whole screen for 30 s (a flashing
-bell without it; copy your own GIF there, cropped to 9:16).
+The intercom ringing plays `/data/ulanzi-control/config/ring.gif` over the whole screen for 30 s, from when it
+has loaded (~2 s; copy your own GIF there, cropped to 9:16; without it nothing happens).
 The temperature key opens the weather page; any of its keys, or a minute, goes back. Paging
 keys are commented out in the config. The weather comes from `weather.get_forecasts` (Open-Meteo,
 hourly), called by the D200 every 10 min with a `response_template` that HA renders down to the

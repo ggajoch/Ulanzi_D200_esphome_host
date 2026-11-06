@@ -167,8 +167,9 @@ when ESPHome starts, back to run mode); the daemon redraws everything at once. N
 
 `id(d200).send_command("display", "play_animation", "15");` covers all keys for 15 s (1-120) with
 `config/ring.gif` from the daemon's working directory (`/data/ulanzi-control/config/ring.gif` on the host
-firmware), cropped to fill the screen as the viewer sees it, at the GIF's own pace. A flashing bell shows while
-it loads (~2 s on the RK3308) and instead of it when there is none. A key press ends it and does nothing else.
+firmware), cropped to fill the screen as the viewer sees it, at the GIF's own pace, once it has loaded (~2 s
+on the RK3308); without the file nothing happens, and a request while one loads or plays is ignored. A key press
+ends it and does nothing else.
 The decoded frames stay in RAM while it plays: crop the GIF to the screen's aspect ratio (9:16 when mounted
 vertically) and keep it small. `examples/host/d200.yaml` plays it when the intercom rings.
 

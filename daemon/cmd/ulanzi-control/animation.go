@@ -1,10 +1,9 @@
 package main
 
 // A full-screen animation over the keys, e.g. when the intercom rings (display play_animation):
-// config/ring.gif, cropped to fill the screen as the viewer sees it; a flashing bell while it
-// loads, or instead of it without that file. The display ticker draws it instead of the keys;
-// a key press ends it. The GIF keeps its own pace: frames the screen can't keep up with are
-// composited, not shown.
+// config/ring.gif, cropped to fill the screen as the viewer sees it, from when it has loaded
+// (nothing without it). The display ticker draws it instead of the keys; a key press ends it.
+// The GIF keeps its own pace: frames the screen can't keep up with are composited, not shown.
 //
 // Speed (RK3308, Cortex-A35): frames are composited straight into framebuffer pixels (BGRA
 // uint32) through a palette table, and one pass through fbMap's table scales, turns and copies
@@ -13,15 +12,12 @@ package main
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"image/gif"
 	"os"
 	"runtime/debug"
 	"sync/atomic"
 	"time"
 	"unsafe"
-
-	xdraw "golang.org/x/image/draw"
 
 	"ulanzi-d200/pkg/ui"
 )
@@ -36,8 +32,6 @@ type animation struct {
 	shown        int // frames put on the screen, for the log
 	next         time.Time
 
-	bells [2][]byte // without a GIF: two framebuffer images, flashing
-
 	g        *gif.GIF
 	idx      int      // next GIF frame
 	canvas   []uint32 // the GIF's logical screen in framebuffer pixels
@@ -48,25 +42,28 @@ type animation struct {
 	back     []byte   // the next framebuffer contents: one copy per frame, so no tearing
 }
 
-var anim atomic.Pointer[animation]
+var (
+	anim        atomic.Pointer[animation]
+	animLoading atomic.Bool
+)
 
-// startAnimation shows the bell at once; the GIF, when there is one, takes over once loaded
+// startAnimation loads the GIF in the background and shows it for d once loaded (~2 s);
+// while one loads or plays, another request is ignored (the frames take tens of MB)
 func startAnimation(d time.Duration) {
-	now := time.Now()
-	bell := &animation{start: now, until: now.Add(d), next: now}
-	bell.bells[0], bell.bells[1] = bellFrame(false), bellFrame(true)
-	anim.Store(bell)
+	if anim.Load() != nil || !animLoading.CompareAndSwap(false, true) {
+		return
+	}
 	go func() {
+		defer animLoading.Store(false)
 		t := time.Now()
 		g, err := loadGIF(animFile)
 		if err != nil {
-			fmt.Println("Animation:", err, "- the bell instead")
+			fmt.Println("Animation:", err)
 			return
 		}
-		a := newGIFAnimation(g, d)
 		fmt.Printf("Animation: %s, %d frames %dx%d, ready in %.1f s\n", animFile, len(g.Image),
 			g.Config.Width, g.Config.Height, time.Since(t).Seconds())
-		anim.CompareAndSwap(bell, a) // unless a key press ended it meanwhile
+		anim.Store(newGIFAnimation(g, d))
 	}()
 }
 
@@ -124,12 +121,6 @@ func drawAnimation(fb []byte) bool {
 		return false
 	}
 	if now.Before(a.next) {
-		return true
-	}
-	if a.g == nil {
-		copy(fb, a.bells[a.shown%2])
-		a.next = now.Add(400 * time.Millisecond)
-		a.shown++
 		return true
 	}
 	// Composite every frame due by now, show only the last
@@ -233,27 +224,6 @@ func fbMap(fbLen, rot, w, h int) []int32 {
 		}
 	}
 	return table
-}
-
-// bellFrame is a ringing bell on the whole screen, its colours swapped when inverted
-func bellFrame(inverted bool) []byte {
-	view := image.NewRGBA(image.Rect(0, 0, LOG_WIDTH, LOG_HEIGHT))
-	if rot := rotation.Load(); rot == 90 || rot == 270 {
-		view = image.NewRGBA(image.Rect(0, 0, LOG_HEIGHT, LOG_WIDTH))
-	}
-	bg, fg := color.RGBA{255, 200, 0, 255}, color.RGBA{0, 0, 0, 255}
-	if inverted {
-		bg, fg = fg, bg
-	}
-	xdraw.Draw(view, view.Rect, &image.Uniform{bg}, image.Point{}, xdraw.Src)
-	cx, cy := view.Rect.Dx()/2, view.Rect.Dy()/2
-	ui.DrawIcon(view, cx, cy-60, 360, "bell-ring", fg)
-	ui.DrawText(view, cx, cy+220, 110, "Domofon", fg)
-	logical := image.NewRGBA(image.Rect(0, 0, LOG_WIDTH, LOG_HEIGHT))
-	ui.RotateInto(logical, logical.Rect, view, int(rotation.Load()))
-	buf := make([]byte, fbStride*LOG_WIDTH)
-	blit(buf, logical)
-	return buf
 }
 
 // words views a framebuffer image as one uint32 a pixel

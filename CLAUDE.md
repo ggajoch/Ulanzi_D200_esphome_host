@@ -115,8 +115,8 @@ ulanzi_d200 (1 per device)
   - rotation (`rotation: 0|90|180|270`): `keyOrder` renumbers the keys from the rotated key-window centres
     (test: `rotation_test.go`), `drawTile` draws each tile upright in a canvas and turns it into its window;
     calibration and layout-edit modes stay unrotated.
-- `animation.go`: full-screen animation (`play_animation`): `config/ring.gif` cropped to fill the screen, a flashing
-  bell while it loads or without it; drawn by the display ticker through `fbMap`'s table (test: `animation_test.go`),
+- `animation.go`: full-screen animation (`play_animation`): `config/ring.gif` cropped to fill the screen, shown once
+  loaded (nothing without it); drawn by the display ticker through `fbMap`'s table (test: `animation_test.go`),
   a key press ends it.
 - `pkg/state/store.go`: ButtonConfig/ButtonState, RingBuffer time series, RWMutex, persisted to `config/state.json`.
 - `pkg/transport/commands.go`: NDJSON modules `display`, `sensor`, `page`, `system`; codes OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
