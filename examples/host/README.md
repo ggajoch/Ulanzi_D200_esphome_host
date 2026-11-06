@@ -30,10 +30,11 @@ The D200 hangs vertically, turned 270° clockwise (`rotation: 270`, see
 ```
 [ 0] [ 1] [13 lock the house, clock]   main:    0 yard lights, 1 garden, 2 grill mode, 3 house lights
 [ 2] [ 3] [13                      ]            off, 4 workshop power, 5 compressor (hold 1 s),
-[ 4] [ 5] [ 6 temperature          ]            7-8 vacuums, 10 PC (hold 1 s: shut down), 11 TV off
+[ 4] [ 5] [ 6 temperature          ]            7-8 vacuums, 10 PC (hold 1 s: PC page), 11 TV off
 [ 7] [ 8] [ 9]                         weather: 0 now, 1 today (daily forecast), 2 next sunset/sunrise,
 [10] [11] [12]                                  3 time to it, 4 precipitation, 5 wind, 6 PV today,
                                                 7 today's max, 8 night's min, 9 greenhouse, 12 back
+                                       PC:      0 sleep (IoTLink), 1 shut down (Node-RED), 2 power, 12 back
 ```
 
 The screen stays dark until yard motion, a door opening or closing, or a key press, and goes dark

@@ -12,10 +12,11 @@
 #   [ 7] [ 8] [ 9]
 #   [10] [11] [12]
 # Page 0 (main): 0 yard lights, 1 garden light, 2 grill mode, 3 all house lights off,
-#   4 workshop power, 5 compressor (hold 1 s), 7-8 vacuums, 10 PC (hold 1 s: shut down), 11 TV off
+#   4 workshop power, 5 compressor (hold 1 s), 7-8 vacuums, 10 PC (hold 1 s: PC page), 11 TV off
 # Page 1 (weather, from key 6; any key or a minute goes back): 0 now, 1 today (the daily
 #   forecast), 2 next sunset or sunrise, 3 time to it, 4 precipitation, 5 wind, 6 PV today,
 #   7 today's max still to come, 8 night's min, 9 greenhouse, 12 back
+# Page 2 (PC, from holding key 10; back with 12 or after a minute): 0 sleep, 1 shut down, 2 power
 # The screen is dark until yard motion, a door opening or closing, or a key press, and goes dark
 # again backlight_timeout after the last door or key, but not before motion_timeout after the
 # last motion (as long as Node-RED keeps the yard lights on). In the dark a press only wakes it.
@@ -56,6 +57,7 @@ substitutions:
   house_lock: script.zamknij_dom
   house_lock_running: script.zamknij_drzwi_po_zamknieciu   # on while a door waits
   house_lock_name: "Zamknij dom"
+  house_locked_name: "Dom zamknięty"
   door_1_lock: lock.tedee_main
   door_1_contact: binary_sensor.outside_door_contact
   door_1_name: "Główne"
@@ -87,6 +89,7 @@ substitutions:
   pc_power: sensor.rack_kompe_power
   pc_on_watts: "150"         # PC running at or above this (Node-RED cuts the plug below it)
   pc_off_topic: nodered/gg_pc_toggle
+  pc_sleep_topic: iotlink/workgroup/box/commands/suspend   # IoTLink on the PC (Node-RED's shutdown uses it too)
   pc_name: "PC"
   tv: remote.harmony         # on while any Harmony activity runs; turn_off ends it
   tv_name: "TV"
@@ -287,7 +290,7 @@ ulanzi_d200:
         then:
           - lambda: id(d200).navigate_page_jump(1);
           - script.execute: weather_refresh
-          - script.execute: weather_back
+          - script.execute: page_back
       pressed_style:
         color: "#4444AA"
       layouts:
@@ -298,7 +301,7 @@ ulanzi_d200:
           text: !lambda 'return {wx_deg(id(ha_temp_out).state)};'
           text_color: "#AACCFF"
 
-    # 10: PC: green while running; a 1 s hold shuts it down through Node-RED (never turns it on)
+    # 10: PC: green while running; a 1 s hold opens the PC page (sleep, shut down, power)
     - position: 10
       page: 0
       on_press:
@@ -360,7 +363,7 @@ ulanzi_d200:
       page: 1
       on_press: &weather_back     # any key of this page goes back to the main page
         then:
-          - script.stop: weather_back
+          - script.stop: page_back
           - lambda: id(d200).navigate_page_jump(0);
       layouts:
         - widget: entity_view
@@ -548,6 +551,85 @@ ulanzi_d200:
           text: "Wróć"
           text_color: "#7777CC"
 
+    # ===== Page 2: PC (from holding key 10) =====
+    # 0: sleep (IoTLink on the PC), then back to the main page
+    - position: 0
+      page: 2
+      on_press:
+        then:
+          - homeassistant.action:
+              action: mqtt.publish
+              data:
+                topic: ${pc_sleep_topic}
+          - script.stop: page_back
+          - lambda: id(d200).navigate_page_jump(0);
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          color: "#1A2A55"
+          icon_id: "power-sleep"
+          icon_color: "#AACCFF"
+          text: "Uśpij"
+          text_color: "#FFFFFF"
+
+    # 1: shut down through Node-RED (IoTLink shutdown, then the plug off), then back
+    - position: 1
+      page: 2
+      on_press:
+        then:
+          - if:
+              condition:
+                binary_sensor.is_on: ha_pc_plug   # with the plug off, Node-RED's topic would turn the PC on
+              then:
+                - homeassistant.action:
+                    action: mqtt.publish
+                    data:
+                      topic: ${pc_off_topic}
+          - script.stop: page_back
+          - lambda: id(d200).navigate_page_jump(0);
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          color: "#551A1A"
+          icon_id: "power"
+          icon_color: "#FF8888"
+          text: "Wyłącz"
+          text_color: "#FFFFFF"
+
+    # 2: the PC's power draw (its plug)
+    - position: 2
+      page: 2
+      layouts:
+        - widget: entity_view
+          color: !lambda 'return {std::string(id(ha_pc_power).state >= ${pc_on_watts} ? "#1A3A1A" : "#111122")};'
+          icon_id: "flash"
+          icon_color: "#FFDD66"
+          text: !lambda |-
+            if (std::isnan(id(ha_pc_power).state)) return {std::string("-- W")};
+            return {str_sprintf("%.0f W", id(ha_pc_power).state)};
+          text_color: "#FFFFFF"
+          text2: "pobór"
+          text2_color: "#FFDD66"
+
+    # 12: back to the main page (it also goes back by itself after a minute)
+    - position: 12
+      page: 2
+      on_press:
+        then:
+          - script.stop: page_back
+          - lambda: id(d200).navigate_page_jump(0);
+      pressed_style:
+        color: "#4444AA"
+      layouts:
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "arrow-u-left-top"
+          icon_color: "#7777CC"
+          text: "Wróć"
+          text_color: "#7777CC"
+
     # ===== All pages =====
     # Pages are off for now. To bring them back: this key, page: N on the sections, and
     # on_connected's page names above
@@ -570,10 +652,11 @@ ulanzi_d200:
     #       text2_color: "#7777CC"
 
     # 13 (big key): lock the house. Large on top (the daemon draws a tall key's text2 there):
-    # the countdown, the doors still to lock, else the time. Red: a door is open (its name);
-    # orange: locking; green: all locked. A press starts a 5 s countdown (pressed again:
-    # cancelled), then house_lock; while it locks or with all locked, a press runs it again at
-    # once (the lights' 5 min from now, a door still open locked once closed)
+    # the countdown, the number of doors still to lock, else the time. Blue: the countdown;
+    # red, pulsing: locking (the doors not locked yet); green: all locked; grey otherwise.
+    # A press starts a 5 s countdown (pressed again: cancelled), then house_lock; while it locks
+    # or with all locked, a press runs it again at once (the lights' 5 min from now, a door
+    # still open locked once closed)
     - position: 13
       page: -1
       on_press:
@@ -607,26 +690,18 @@ ulanzi_d200:
           text_color: "#FFFFFF"
           text2: !lambda 'return {to_string(id(house_grace))};'
           text2_color: "#FFFFFF"
-        - widget: entity_view    # locking: how many doors are not locked yet
+        - widget: entity_view    # locking: how many doors are not locked yet, and which
           when: !lambda 'return id(ha_house_lock_running).state;'
-          color: "#FF8800"
+          color: "#DD2222"
+          style: slow              # the daemon pulses the background
           icon_id: "lock-clock"
-          icon_color: "#000000"
-          text: "do zamknięcia"
-          text_color: "#000000"
+          icon_color: "#FFFFFF"
+          text: !lambda 'return id(doors_unlocked).state;'
+          text_color: "#FFFFFF"
           text2: !lambda |-
             int n = (id(ha_door_1_lock).state != "locked") + (id(ha_door_2_lock).state != "locked") +
                     (id(ha_door_3_lock).state != "locked") + (id(ha_door_4_lock).state != "locked");
             return {to_string(n)};
-          text2_color: "#000000"
-        - widget: entity_view
-          when: !lambda 'return !id(doors_open).state.empty();'
-          color: "#DD2222"
-          icon_id: "door-open"
-          icon_color: "#FFFFFF"
-          text: !lambda 'return id(doors_open).state;'
-          text_color: "#FFFFFF"
-          text2: !lambda 'return id(clock_text).state;'
           text2_color: "#FFFFFF"
         - widget: entity_view    # a lock jammed or unavailable
           when: !lambda 'return !id(doors_alert).state.empty();'
@@ -642,11 +717,11 @@ ulanzi_d200:
           color: "#1E7A34"
           icon_id: "home-lock"
           icon_color: "#FFFFFF"
-          text: "${house_lock_name}"
+          text: "${house_locked_name}"
           text_color: "#FFFFFF"
           text2: !lambda 'return id(clock_text).state;'
           text2_color: "#FFFFFF"
-        - widget: entity_view    # all closed, some unlocked
+        - widget: entity_view    # not all locked (doors open or not)
           color: "#222222"
           icon_id: "home-lock-open"
           icon_color: "#777777"
@@ -688,14 +763,8 @@ script:
     mode: restart
     then:
       - delay: 1s
-      - if:
-          condition:
-            binary_sensor.is_on: ha_pc_plug   # with the plug off, Node-RED's topic would turn the PC on
-          then:
-            - homeassistant.action:
-                action: mqtt.publish
-                data:
-                  topic: ${pc_off_topic}
+      - lambda: id(d200).navigate_page_jump(2);
+      - script.execute: page_back
 
   - id: house_lock_countdown
     mode: restart
@@ -747,7 +816,7 @@ script:
       - script.execute: backlight_wake
       - lambda: id(d200).send_command("display", "play_animation", "${ring_animation}");
 
-  - id: weather_back         # the weather page goes back to the main page after a minute
+  - id: page_back            # the weather or PC page goes back to the main page after a minute
     mode: restart
     then:
       - delay: 60s
@@ -1016,30 +1085,19 @@ text_sensor:
             then:
               - script.execute: intercom_ring
 
-  # For the big key: the one door's name, "N drzwi" for several, "" for none
-  - platform: template
-    id: doors_open
-    internal: true
-    update_interval: 1s
-    lambda: |-
-      std::vector<std::string> v;
-      if (id(ha_door_1_contact).state) v.push_back("${door_1_name}");
-      if (id(ha_door_2_contact).state) v.push_back("${door_2_name}");
-      if (id(ha_door_3_contact).state) v.push_back("${door_3_name}");
-      if (id(ha_door_4_contact).state) v.push_back("${door_4_name}");
-      return {v.empty() ? std::string() : v.size() == 1 ? v[0] : to_string(v.size()) + " drzwi"};
-
+  # For the big key: the names of the doors not locked, space-separated (the daemon wraps
+  # them onto two lines); "" when all are locked
   - platform: template
     id: doors_unlocked
     internal: true
     update_interval: 1s
     lambda: |-
-      std::vector<std::string> v;
-      if (id(ha_door_1_lock).state != "locked") v.push_back("${door_1_name}");
-      if (id(ha_door_2_lock).state != "locked") v.push_back("${door_2_name}");
-      if (id(ha_door_3_lock).state != "locked") v.push_back("${door_3_name}");
-      if (id(ha_door_4_lock).state != "locked") v.push_back("${door_4_name}");
-      return {v.empty() ? std::string() : v.size() == 1 ? v[0] : to_string(v.size()) + " drzwi"};
+      std::string s;
+      if (id(ha_door_1_lock).state != "locked") s += " ${door_1_name}";
+      if (id(ha_door_2_lock).state != "locked") s += " ${door_2_name}";
+      if (id(ha_door_3_lock).state != "locked") s += " ${door_3_name}";
+      if (id(ha_door_4_lock).state != "locked") s += " ${door_4_name}";
+      return {s.empty() ? s : s.substr(1)};
 
   - platform: template    # jammed, unavailable, not known yet
     id: doors_alert
