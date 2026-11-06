@@ -16,7 +16,7 @@ Two variants share the component and the daemon: **host** (this fork: `buildroot
 
 | To change | Edit | Ship it with |
 |---|---|---|
-| Keys, pages, HA entities, labels, colours, hold-to-activate | `examples/host/d200.yaml` (entities and labels in `substitutions:`), `examples/host/d200-toggle.yaml` (one toggle key) | ESPHome deploy |
+| Keys, pages, HA entities, labels, colours, hold-to-activate | `examples/host/d200.yaml` (entities and labels in `substitutions:`), `examples/host/d200-toggle.yaml` (one toggle key), `d200-vacuum.yaml` (one vacuum key) | ESPHome deploy |
 | Widget types, YAML schema, layout logic, HA services of the component | `components/ulanzi_d200/` (`__init__.py` schema/codegen, `.h`/`.cpp` runtime), document in `docs/configuration.md` | ESPHome deploy |
 | Drawing, fonts, icons, key-code map, status bar, clock | `daemon/` (`pkg/ui/`, `cmd/ulanzi-control/main.go`) | daemon deploy |
 | NDJSON protocol | both sides together: `components/ulanzi_d200/ulanzi_d200.cpp` and `daemon/pkg/transport/commands.go` | both deploys |
@@ -60,7 +60,7 @@ device's glibc. Keep its flags: `-O2`, static libstdc++/libgcc, static OpenSSL `
 
 - **HA identity:** keep `esphome: name`, `host: mac_address` and the API key in `examples/host/d200.yaml` unchanged,
   or Home Assistant sees a new device. `mac=` in `/data/esphome/mdns.txt` must match `host: mac_address`.
-- **Compressor key:** hold-only (1 s), so it is never started by accident.
+- **Compressor and PC keys:** hold-only (1 s), so they never fire by accident. Lock keys only lock: the D200 hangs outside.
 - **Secrets stay out of git:** `examples/host/secrets.yaml` (real API/OTA key) and `backup/` (stock firmware dump) are
   git-ignored.
 - **Line endings:** `.gitattributes` forces LF (bash in WSL rejects CRLF). Commit new scripts with
@@ -101,7 +101,7 @@ ulanzi_d200 (1 per device)
   - batch queue: max 4 commands per batch, 3 s response timeout;
   - NDJSON parsing robust against printk noise;
   - page navigation (`navigate_page_next/prev/jump`);
-  - backlight light entity, notification services;
+  - backlight light entity (`wake_on_press`: in the dark a press only wakes the screen), notification services;
   - ping every 5 s against a 10 s timeout.
 
 ### Go daemon
@@ -115,6 +115,9 @@ ulanzi_d200 (1 per device)
   - rotation (`rotation: 0|90|180|270`): `keyOrder` renumbers the keys from the rotated key-window centres
     (test: `rotation_test.go`), `drawTile` draws each tile upright in a canvas and turns it into its window;
     calibration and layout-edit modes stay unrotated.
+- `animation.go`: full-screen animation (`play_animation`): `config/ring.gif` cropped to fill the screen, a flashing
+  bell while it loads or without it; drawn by the display ticker through `fbMap`'s table (test: `animation_test.go`),
+  a key press ends it.
 - `pkg/state/store.go`: ButtonConfig/ButtonState, RingBuffer time series, RWMutex, persisted to `config/state.json`.
 - `pkg/transport/commands.go`: NDJSON modules `display`, `sensor`, `page`, `system`; codes OK=0, ERROR=1, INVALID=2, TIMEOUT=3, INTERNAL=5.
 - `pkg/transport/serial.go`: 1.5 Mbps; port from `ULANZI_SERIAL`, default `/dev/ttyFIQ0`.
@@ -129,6 +132,9 @@ Rotation: `{"module":"display","action":"set_rotation","params":["90"]}` (0, 90,
 mounted turned clockwise; anything else → INVALID). The component sends it first in every full config upload
 (`send_all_section_configs_`: daemon ready, connect fallback, back to run mode). The daemon keeps it in memory only,
 redraws everything, and from then on maps key presses and button IDs to the viewer's reading order.
+
+Animation: `{"module":"display","action":"play_animation","params":["15"]}` (seconds, 1-120) plays
+`/data/ulanzi-control/config/ring.gif` over the whole screen; call it with `id(d200).send_command(...)`.
 
 ### Key patterns
 

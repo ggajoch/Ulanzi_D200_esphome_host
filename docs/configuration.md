@@ -96,6 +96,7 @@ ulanzi_d200:
 | `uart_id` | ID | Yes | Reference to UART component |
 | `backlight` | light | No | The backlight light entity: any ESPHome light option. Default name `Display Backlight` |
 | `rotation` | int | No | `0` (default), `90`, `180` or `270`: how far the D200 is mounted turned clockwise. See [Rotation](#rotation) |
+| `wake_on_press` | bool | No | `false` (default). `true`: while the backlight is off, a key press only turns it on; neither the press nor its release runs any `on_press`/`on_release` or `on_section_press`/`release` |
 | `on_connected` | Automation | No | Fires when D200 connection is detected |
 | `on_disconnected` | Automation | No | Fires after 10 s with no UART data |
 | `on_section_press` | Automation | No | Fires on any section press. Variable: `position` (int) |
@@ -161,6 +162,15 @@ landscape numbering.
 The component sends the rotation to the daemon before each full config upload (when the daemon starts or restarts,
 when ESPHome starts, back to run mode); the daemon redraws everything at once. NDJSON:
 `{"module":"display","action":"set_rotation","params":["90"]}`.
+
+### Full-screen animation
+
+`id(d200).send_command("display", "play_animation", "15");` covers all keys for 15 s (1-120) with
+`config/ring.gif` from the daemon's working directory (`/data/ulanzi-control/config/ring.gif` on the host
+firmware), cropped to fill the screen as the viewer sees it, at the GIF's own pace. A flashing bell shows while
+it loads (~2 s on the RK3308) and instead of it when there is none. A key press ends it and does nothing else.
+The decoded frames stay in RAM while it plays: crop the GIF to the screen's aspect ratio (9:16 when mounted
+vertically) and keep it small. `examples/host/d200.yaml` plays it when the intercom rings.
 
 ### Layout configuration
 
@@ -233,7 +243,7 @@ The standard button appearance: icon, primary text, secondary text, background c
 | `icon_color` | string/lambda | `"#FFFFFF"` | Icon color |
 | `text` | string/lambda | `""` | Primary text |
 | `text_color` | string/lambda | `"#FFFFFF"` | Primary text color |
-| `text2` | string/lambda | `""` | Secondary text |
+| `text2` | string/lambda | `""` | Secondary text. In a tall key (the big key at `rotation: 90`/`270`) it is drawn large at the top, e.g. a clock |
 | `text2_color` | string/lambda | `"#FFFFFF"` | Secondary text color |
 | `style` | string/lambda | `"constant"` | Animation hint (`constant`, `slow`, `fast`) |
 
@@ -788,6 +798,10 @@ ulanzi_d200:
     name: "Backlight"
     restore_mode: RESTORE_DEFAULT_OFF
 ```
+
+To switch the screen off when idle, give the light `restore_mode: ALWAYS_OFF`, turn it off from a
+script after a timeout, and set `wake_on_press: true`, so the first press in the dark only wakes it
+(see `examples/host/d200.yaml`: `backlight_timer`).
 
 No other entities are auto-created. All interactive entities (switches, buttons, sensors) are defined using standard ESPHome platform entities in your YAML.
 

@@ -69,7 +69,7 @@ fi
 # (d200.yaml finds the component at ../../components)
 B=$WORK/build
 rm -rf "$B/components" && cp -r "$REPO/components" "$B/"
-mkdir -p "$B/examples/host" && cp "$SRC"/*.yaml "$B/examples/host/"   # d200.yaml, its packages, secrets.yaml
+mkdir -p "$B/examples/host" && cp "$SRC"/*.yaml "$SRC"/*.h "$B/examples/host/"   # d200.yaml, its packages and header, secrets.yaml
 
 # The host platform compiles with whatever CC/CXX/AR/... say (ninja, no PlatformIO);
 # extra words in CC/CXX reach every compile and the link. Optimisation and static

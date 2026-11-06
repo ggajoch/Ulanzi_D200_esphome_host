@@ -1,0 +1,62 @@
+# One D200 key for a Home Assistant vacuum: the colour shows its state; a press sends it
+# home while it cleans or returns, otherwise starts it (start_action on start_entity, e.g.
+# vacuum.start on the vacuum, or button.press on a Roborock routine button).
+#
+# Include from d200.yaml:
+#   name: !include {file: d200-vacuum.yaml, vars: {key: ..., vacuum: ..., start_action: ..., start_entity: ..., label: ..., page: ..., position: ...}}
+# key must be unique (it names the id ha_<key>).
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_${key}
+    entity_id: ${vacuum}
+
+ulanzi_d200:
+  sections:
+    - position: ${position}
+      page: ${page}
+      on_press:
+        then:
+          - if:
+              condition:
+                lambda: 'return id(ha_${key}).state == "cleaning" || id(ha_${key}).state == "returning";'
+              then:
+                - homeassistant.action:
+                    action: vacuum.return_to_base
+                    data:
+                      entity_id: ${vacuum}
+              else:
+                - homeassistant.action:
+                    action: ${start_action}
+                    data:
+                      entity_id: ${start_entity}
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(ha_${key}).state == "cleaning";'
+          color: "#2266DD"
+          icon_id: "robot-vacuum"
+          icon_color: "#FFFFFF"
+          text: "${label}"
+          text_color: "#FFFFFF"
+        - widget: entity_view
+          when: !lambda 'return id(ha_${key}).state == "returning";'
+          color: "#1A3366"
+          icon_id: "robot-vacuum"
+          icon_color: "#AACCFF"
+          text: "${label}"
+          text_color: "#AACCFF"
+        - widget: entity_view
+          when: !lambda 'return id(ha_${key}).state == "error";'
+          color: "#DD2222"
+          icon_id: "robot-vacuum-alert"
+          icon_color: "#FFFFFF"
+          text: "${label}"
+          text_color: "#FFFFFF"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "robot-vacuum"
+          icon_color: "#777777"
+          text: "${label}"
+          text_color: "#BBBBBB"

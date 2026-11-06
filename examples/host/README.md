@@ -12,29 +12,59 @@ Home Assistant ──API 6053──▶ /data/esphome/d200 ──/run/d200-esp �
 |---|---|
 | `d200.yaml` | ESPHome config. HA entity IDs and key labels are the `substitutions:` at the top |
 | `d200-toggle.yaml` | package for one key that toggles an HA entity (template switch + `homeassistant` binary_sensor) |
+| `d200-vacuum.yaml` | package for one vacuum key: colour = state, a press starts it or sends it home |
+| `d200_weather.h` | text helpers for the keys (decimal comma, times, time spans), `esphome: includes` |
 | `secrets.yaml.example` | template for `secrets.yaml` (`api_encryption_key`); `build.sh` generates one if missing |
 | `build.sh` | builds `../../components` + `d200.yaml` and `../../daemon` into `~/d200/esphome/out/{d200,ulanzi-control}` |
 | `deploy.sh` | `build.sh`, then ESPHome OTA to `$DEVICE` |
-| `screenshots/` | `/dev/fb0` dumps, turned the way the mounted D200 is seen (`rotation: 90`) |
+| `screenshots/` | `/dev/fb0` dumps of both pages, as the mounted D200 is seen (`rotation: 270`) |
 
-![Page 0](screenshots/d200-page0-zewnatrz.png)
+![Main page](screenshots/d200-page0-zewnatrz.png) ![Weather page](screenshots/d200-page1-pogoda.png)
 
 ## Keys
 
 The config is the author's own (Polish labels). Replace the `substitutions:` with your entities.
-The D200 hangs vertically, turned 90° clockwise (`rotation: 90`, see
+The D200 hangs vertically, turned 270° clockwise (`rotation: 270`, see
 [docs/configuration.md](../../docs/configuration.md#rotation)); positions follow the viewer's reading order:
 
 ```
-[ 0] [ 1] [ 2]                     Zewnątrz: 0-2 outdoor lights, 3 all three, 5 Kuchnia
-[ 3] [ 4] [ 5]                     Warsztat: 0 workshop power, 1 compressor (hold 1 s)
-[ 6] [ 7] [ 8]
-[13 clock] [ 9 Start ] [10]
-[13 page ] [11 Wstecz] [12 Dalej]
+[ 0] [ 1] [13 lock the house, clock]   main:    0 yard lights, 1 garden, 2 grill mode, 3 house lights
+[ 2] [ 3] [13                      ]            off, 4 workshop power, 5 compressor (hold 1 s),
+[ 4] [ 5] [ 6 temperature          ]            7-8 vacuums, 10 PC (hold 1 s: shut down), 11 TV off
+[ 7] [ 8] [ 9]                         weather: 0 now, 1 today (daily forecast), 2 next sunset/sunrise,
+[10] [11] [12]                                  3 time to it, 4 precipitation, 5 wind, 6 PV today,
+                                                7 today's max, 8 night's min, 9 greenhouse, 12 back
 ```
+
+The screen stays dark until yard motion, a door opening or closing, or a key press, and goes dark
+60 s after the last of them; in the dark the first press only wakes it (`wake_on_press`).
+The intercom ringing plays `/data/ulanzi-control/config/ring.gif` over the whole screen for 30 s (a flashing
+bell without it; copy your own GIF there, cropped to 9:16).
+The temperature key opens the weather page; any of its keys, or a minute, goes back. Paging
+keys are commented out in the config. The weather comes from `weather.get_forecasts` (Open-Meteo,
+hourly), called by the D200 every 10 min with a `response_template` that HA renders down to the
+numbers shown. Neither met.no nor Open-Meteo in HA gives a precipitation probability, so the
+precipitation key shows when it starts and how much falls. In the big key the daemon draws `text2`
+(the time) large at the top.
 
 Home Assistant must let the device call actions: ESPHome integration → the device → Configure →
 "Allow the device to perform Home Assistant actions". States are read without it.
+
+Besides its entities, the config uses things set up in the author's Home Assistant and Node-RED:
+
+- `input_boolean.tryb_grillowy` (grill key): Node-RED's outdoor motion lights skip it while on (two
+  "tryb grillowy off?" gates in the `home` flow); an HA automation turns it off at 5:00.
+- `light.swiatla_dom`: a light group of the house lights.
+- `script.zamknij_dom` (big key, after a 5 s countdown on the D200 that a second press cancels): starts
+  `script.zamknij_drzwi_po_zamknieciu` once per door. Each run locks its Tedee when the door has been
+  closed for 5 s (opened again: it waits again), at the latest after 5 min. A new run restarts them; an
+  automation stops them when the main Tedee is unlocked or the main door opens (the D200 also stops its
+  countdown when the main door opens). While they run, Node-RED's "main door locked"
+  cascade (lock all the other doors at once) is skipped by a gate in the `tedee` flow.
+- The PC key publishes `nodered/gg_pc_toggle`, which Node-RED turns into a shutdown, then cuts the plug.
+- `script.zamknij_dom` also switches the outdoor lights on for 5 min when it is dark (or they are on), and an
+  automation runs it when the main Tedee is locked from outside HA (keypad, app, by hand). Node-RED's cascade
+  waits 2 s before checking whether the per-door script runs.
 
 ## Build and deploy
 
@@ -73,4 +103,5 @@ ESPHOME_PREFDIR=/data/esphome/prefs /data/esphome/d200
 
 Start socat first: ESPHome opens the uart once at startup and the daemon opens its port once.
 The daemon keeps `config/` (layout, key map, state, `timezone`) in its working directory;
-`/data/ulanzi-control/config/timezone` holds the clock's time zone, e.g. `Europe/Warsaw` (or set `TZ`).
+`/data/ulanzi-control/config/timezone` holds the time zone of the `status` widget's clock, e.g. `Europe/Warsaw`
+(or set `TZ`). This config shows the time on the big key instead, from ESPHome's `time:` (`timezone:` there).

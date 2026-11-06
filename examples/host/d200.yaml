@@ -4,40 +4,104 @@
 #   ESPHome -> /run/d200-esp, daemon -> /run/d200-daemon
 # Run: ESPHOME_PREFDIR=/data/esphome/prefs /data/esphome/d200
 #
-# Mounted vertically: rotation: 90 (the D200 turned 90° clockwise). Keys as the viewer
+# Mounted vertically: rotation: 270 (the D200 turned 270° clockwise). Keys as the viewer
 # sees them (3 cols x 5 rows; 13, the big key, is two rows high):
-#   [ 0] [ 1] [ 2]
-#   [ 3] [ 4] [ 5]
-#   [ 6] [ 7] [ 8]
-#   [13] [ 9 HOME] [10]
-#   [13] [11 PREV] [12 NEXT]    13: status bar, clock over page name
-# Pages: 0 Zewnątrz (0-2 outdoor lights, 3 all three, 5 Kuchnia),
-#        1 Warsztat (0 workshop power, 1 compressor: hold 1 s).
-# Each light/switch key: d200-toggle.yaml. The clock's time zone is the daemon's
-# /data/ulanzi-control/config/timezone (Europe/Warsaw).
+#   [ 0] [ 1] [13 lock the house, clock on top]
+#   [ 2] [ 3] [13                             ]
+#   [ 4] [ 5] [ 6 temperature: weather page   ]
+#   [ 7] [ 8] [ 9]
+#   [10] [11] [12]
+# Page 0 (main): 0 yard lights, 1 garden light, 2 grill mode, 3 all house lights off,
+#   4 workshop power, 5 compressor (hold 1 s), 7-8 vacuums, 10 PC (hold 1 s: shut down), 11 TV off
+# Page 1 (weather, from key 6; any key or a minute goes back): 0 now, 1 today (the daily
+#   forecast), 2 next sunset or sunrise, 3 time to it, 4 precipitation, 5 wind, 6 PV today,
+#   7 today's max still to come, 8 night's min, 9 greenhouse, 12 back
+# The screen is dark until yard motion, a door opening or closing, or a key press, and goes dark
+# again backlight_timeout after the last of them. In the dark a key press only wakes it.
+# The intercom ringing shows a full-screen animation (config/ring.gif on the D200).
+# Toggle keys: d200-toggle.yaml; vacuum keys: d200-vacuum.yaml; text helpers: d200_weather.h.
 
 substitutions:
   # ===== Home Assistant entities and key labels =====
   # The author's own setup (Polish labels): put your entities and labels here
-  # Zewnątrz (outdoor lights); the "Wszystkie" key switches these three
-  out_1: light.relayboard_2_light_podw_rko_drzwi
-  out_1_name: "Drzwi"
-  out_2: light.relayboard_2_light_podw_rko_warsztat
-  out_2_name: "Warsztat"
-  out_3: light.relayboard_2_light_podw_rko_przej_cie
-  out_3_name: "Przejście"
-  # Test key on the Zewnątrz page (HA light group)
-  kitchen: light.kuchnia_lights
-  kitchen_name: "Kuchnia"
+  # Screen: wakes on yard motion (these two), the four door contacts below, or a key
+  yard_motion_1: binary_sensor.outside_motion_presence
+  yard_motion_2: binary_sensor.outside_warsztat_motion_presence
+  backlight_timeout: 60s
+  # Intercom: a ring shows the daemon's full-screen animation (config/ring.gif on the D200)
+  intercom_1: event.domofon_rx_domofon_bramka
+  intercom_2: event.domofon_rx_domofon_drzwi
+  ring_animation: "30"       # seconds
+  # Outdoor lights: one key for the two yard lights, one for the garden path
+  yard_1: light.relayboard_2_light_podw_rko_drzwi
+  yard_2: light.relayboard_2_light_podw_rko_warsztat
+  yard_name: "Światła podwórko"
+  garden: light.relayboard_2_light_podw_rko_przej_cie
+  garden_name: "Ogród"
+  # input_boolean; while on, Node-RED's outdoor motion lights neither switch on nor off.
+  # An HA automation turns it off at 5:00
+  grill: input_boolean.tryb_grillowy
+  grill_name: "Grill"
+  # Lock the house (big key). The D200 waits 5 s first (a second press, or the main door
+  # opening, cancels), then runs house_lock: each Tedee locks once its door has been closed
+  # for 5 s, an open door after it closes, at the latest after 5 min anyway. Unlocking the
+  # main Tedee or opening the main door cancels the rest (HA automation). When it is dark
+  # (or they are on), house_lock also switches the outdoor lights on for 5 min. Locking the
+  # main Tedee from its keypad runs house_lock the same way (HA automation). Nothing here
+  # ever unlocks (the D200 hangs outside)
+  house_lock: script.zamknij_dom
+  house_lock_running: script.zamknij_drzwi_po_zamknieciu   # on while a door waits
+  house_lock_name: "Zamknij dom"
+  door_1_lock: lock.tedee_main
+  door_1_contact: binary_sensor.outside_door_contact
+  door_1_name: "Główne"
+  door_2_lock: lock.tedee_spizarka
+  door_2_contact: binary_sensor.spizarka_magazyn_door_contact
+  door_2_name: "Spiżarka"
+  door_3_lock: lock.tedee_magazyn
+  door_3_contact: binary_sensor.magazyn_door_contact
+  door_3_name: "Magazyn"
+  door_4_lock: lock.tedee_warsztat
+  door_4_contact: binary_sensor.warsztat_door_contact
+  door_4_name: "Warsztat"
+  # HA light group of the house lights (those Node-RED's "leaving home" turns off)
+  house_lights: light.swiatla_dom
+  house_lights_name: "Światła dom"
   # Warsztat (workshop)
   workshop_power: switch.relayboard_warsztat_warsztat
   workshop_power_name: "Prąd warsztat"
   compressor: switch.relayboard_warsztat_kompresor
   compressor_name: "Kompresor"
+  # Dom
+  vac_down: vacuum.vac_saros
+  vac_down_start: button.vac_saros_smart   # the Roborock routine the "VACUUM" button runs
+  vac_down_name: "Odkurzacz parter"
+  vac_up: vacuum.roborock_s5_max_2_2
+  vac_up_name: "Odkurzacz piętro"
+  # PC: plug with power metering; Node-RED's MQTT topic shuts it down, then cuts the plug
+  pc_plug: switch.rack_kompe
+  pc_power: sensor.rack_kompe_power
+  pc_on_watts: "150"         # PC running at or above this (Node-RED cuts the plug below it)
+  pc_off_topic: nodered/gg_pc_toggle
+  pc_name: "PC"
+  tv: remote.harmony         # on while any Harmony activity runs; turn_off ends it
+  tv_name: "TV"
+  # Weather
+  temp_out: sensor.luxtronik_320623_0997_outdoor_temperature
+  weather: weather.pleszow_2  # Open-Meteo: hourly for 6 days, feels-like, gusts (no rain chance)
+  rain_now: binary_sensor.rain_sensor_water_leak
+  greenhouse_temp: sensor.szklarnia_env_temperature
+  pv_today_1: sensor.energy_production_today
+  pv_today_2: sensor.energy_production_today_2
+  # Pages are off for now (no page key): the weather page opens from the temperature key
+  # page_0_name: "Zewnątrz"
+  # page_1_name: "Dom"
 
 esphome:
   name: d200
   friendly_name: Ulanzi D200
+  includes:
+    - d200_weather.h
   build_flags:
     - -O2                  # the host build has no default optimisation (it would be -O0)
     - -static-libstdc++    # the D200 image ships no libstdc++.so; glibc stays dynamic
@@ -55,6 +119,10 @@ api:
   encryption:
     key: !secret api_encryption_key
   reboot_timeout: 0s
+  on_client_connected:
+    then:
+      - delay: 10s
+      - script.execute: weather_refresh
 
 ota:
   # Host OTA (TCP 8082): writes <exe>.ota.new, checks the ELF machine matches the
@@ -65,6 +133,16 @@ uart:
   id: uart_bus
   port: /run/d200-esp
   baud_rate: 1500000
+
+time:
+  - platform: host           # the D200's clock (NTP)
+    id: host_time
+    timezone: Europe/Warsaw
+
+interval:
+  - interval: 10min
+    then:
+      - script.execute: weather_refresh
 
 external_components:
   # The component from this repo (build.sh copies components/ along with this file)
@@ -77,67 +155,104 @@ external_components:
   #   components: [ulanzi_d200]
 
 packages:
-  # Page 0: Zewnątrz
-  out_1: !include {file: d200-toggle.yaml, vars: {key: out_1, entity: "${out_1}", label: "${out_1_name}", page: 0, position: 0, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
-  out_2: !include {file: d200-toggle.yaml, vars: {key: out_2, entity: "${out_2}", label: "${out_2_name}", page: 0, position: 1, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
-  out_3: !include {file: d200-toggle.yaml, vars: {key: out_3, entity: "${out_3}", label: "${out_3_name}", page: 0, position: 2, icon_on: outdoor-lamp, icon_off: outdoor-lamp}}
-  kitchen: !include {file: d200-toggle.yaml, vars: {key: kitchen, entity: "${kitchen}", label: "${kitchen_name}", page: 0, position: 5, icon_on: ceiling-light, icon_off: ceiling-light-outline}}
-  # Page 1: Warsztat (the compressor key is below: hold-to-toggle)
-  workshop_power: !include {file: d200-toggle.yaml, vars: {key: workshop_power, entity: "${workshop_power}", label: "${workshop_power_name}", page: 1, position: 0, icon_on: power-plug, icon_off: power-plug-off, color_on: "#22AA44"}}
+  # Page 0 (keys 0, 3, 5, 6, 10 and 11 are below)
+  garden: !include {file: d200-toggle.yaml, vars: {key: garden, entity: "${garden}", label: "${garden_name}", page: 0, position: 1, icon_on: pine-tree, icon_off: pine-tree}}
+  grill: !include {file: d200-toggle.yaml, vars: {key: grill, entity: "${grill}", label: "${grill_name}", page: 0, position: 2, icon_on: grill, icon_off: grill-outline, color_on: "#FF5500"}}
+  workshop_power: !include {file: d200-toggle.yaml, vars: {key: workshop_power, entity: "${workshop_power}", label: "${workshop_power_name}", page: 0, position: 4, icon_on: power-plug, icon_off: power-plug-off, color_on: "#22AA44"}}
+  vac_down: !include {file: d200-vacuum.yaml, vars: {key: vac_down, vacuum: "${vac_down}", start_action: button.press, start_entity: "${vac_down_start}", label: "${vac_down_name}", page: 0, position: 7}}
+  vac_up: !include {file: d200-vacuum.yaml, vars: {key: vac_up, vacuum: "${vac_up}", start_action: vacuum.start, start_entity: "${vac_up}", label: "${vac_up_name}", page: 0, position: 8}}
 
 ulanzi_d200:
   id: d200
   uart_id: uart_bus
-  rotation: 90   # mounted vertically: positions are numbered as the viewer reads them
+  rotation: 270  # mounted vertically: positions are numbered as the viewer reads them
+  wake_on_press: true   # in the dark a press only switches the screen on
 
-  on_connected:
-    then:
-      - lambda: |-
-          id(d200).send_command("page", "rename", "0", "Zewnątrz");
-          id(d200).send_command("page", "rename", "1", "Warsztat");
+  backlight:
+    id: backlight
+    name: "Display Backlight"
+    restore_mode: ALWAYS_OFF
+    default_transition_length: 0s   # one brightness command, not a ramp of them
+    on_turn_on:
+      - script.execute: backlight_timer
+
+  on_section_press:
+    - script.execute: backlight_timer
+
+  # Pages are off for now; their names were only shown by a status widget
+  # on_connected:
+  #   then:
+  #     - lambda: |-
+  #         id(d200).send_command("page", "rename", "0", "${page_0_name}");
+  #         id(d200).send_command("page", "rename", "1", "${page_1_name}");
 
   sections:
-    # ===== Page 0: Zewnątrz =====
-    # 3: all outdoor lights (no HA group: one action on the three). ON if any is on;
-    # a press turns all three off, or all on when all are off
-    - position: 3
+    # ===== Page 0 (main) =====
+    # 0: both yard lights (no HA group: one action on the two). ON if either is on;
+    # a press turns both off, or both on when both are off
+    - position: 0
       page: 0
       on_press:
         then:
           - if:
               condition:
-                lambda: 'return id(sw_out_1).state || id(sw_out_2).state || id(sw_out_3).state;'
+                lambda: 'return id(ha_yard_1).state || id(ha_yard_2).state;'
               then:
                 - homeassistant.action:
                     action: light.turn_off
                     data:
-                      entity_id: "${out_1},${out_2},${out_3}"
+                      entity_id: "${yard_1},${yard_2}"
               else:
                 - homeassistant.action:
                     action: light.turn_on
                     data:
-                      entity_id: "${out_1},${out_2},${out_3}"
+                      entity_id: "${yard_1},${yard_2}"
       pressed_style:
         color: "#666666"
       layouts:
         - widget: entity_view
-          when: !lambda 'return id(sw_out_1).state || id(sw_out_2).state || id(sw_out_3).state;'
+          when: !lambda 'return id(ha_yard_1).state || id(ha_yard_2).state;'
           color: "#FFAA00"
-          icon_id: "lightbulb-group"
+          icon_id: "outdoor-lamp"
           icon_color: "#000000"
-          text: "Wszystkie"
+          text: "${yard_name}"
           text_color: "#000000"
         - widget: entity_view
           color: "#222222"
-          icon_id: "lightbulb-group-off"
+          icon_id: "outdoor-lamp"
           icon_color: "#777777"
-          text: "Wszystkie"
+          text: "${yard_name}"
           text_color: "#BBBBBB"
 
-    # ===== Page 1: Warsztat =====
-    # 1: compressor, toggles only after a 1 s hold (released earlier: nothing happens)
-    - position: 1
-      page: 1
+    # 3: house lights: lit while any is on; a press turns them all off (never on)
+    - position: 3
+      page: 0
+      on_press:
+        then:
+          - homeassistant.action:
+              action: light.turn_off
+              data:
+                entity_id: ${house_lights}
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(ha_house_lights).state;'
+          color: "#FFAA00"
+          icon_id: "home-lightbulb"
+          icon_color: "#000000"
+          text: "${house_lights_name}"
+          text_color: "#000000"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "home-lightbulb-outline"
+          icon_color: "#777777"
+          text: "${house_lights_name}"
+          text_color: "#BBBBBB"
+
+    # 5: compressor, toggles only after a 1 s hold (released earlier: nothing happens)
+    - position: 5
+      page: 0
       on_press:
         then:
           - script.execute: compressor_hold
@@ -161,71 +276,388 @@ ulanzi_d200:
           text: "${compressor_name}"
           text_color: "#BBBBBB"
 
-    # ===== All pages: navigation (bottom right) and status (bottom left) =====
-    - position: 12
-      page: -1
+    # 6: outdoor temperature, e.g. "3,8°C"; a press opens the weather page
+    - position: 6
+      page: 0
       on_press:
         then:
-          - lambda: id(d200).navigate_page_next();
+          - lambda: id(d200).navigate_page_jump(1);
+          - script.execute: weather_refresh
+          - script.execute: weather_back
       pressed_style:
         color: "#4444AA"
-        icon_color: "#FFFFFF"
       layouts:
         - widget: entity_view
           color: "#111122"
-          icon_id: "chevron-right"
-          icon_color: "#7777CC"
-          text: "Dalej"
-          text_color: "#7777CC"
+          icon_id: "thermometer"
+          icon_color: !lambda 'return {std::string(id(ha_temp_out).state < 0 ? "#66BBFF" : "#FFAA66")};'
+          text: !lambda 'return {wx_deg(id(ha_temp_out).state)};'
+          text_color: "#AACCFF"
 
+    # 10: PC: green while running; a 1 s hold shuts it down through Node-RED (never turns it on)
+    - position: 10
+      page: 0
+      on_press:
+        then:
+          - script.execute: pc_hold
+      on_release:
+        then:
+          - script.stop: pc_hold
+      pressed_style:
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(ha_pc_power).state >= ${pc_on_watts};'
+          color: "#22AA44"
+          icon_id: "desktop-tower-monitor"
+          icon_color: "#FFFFFF"
+          text: "${pc_name}"
+          text_color: "#FFFFFF"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "desktop-tower"
+          icon_color: "#777777"
+          text: "${pc_name}"
+          text_color: "#BBBBBB"
+
+    # 11: TV: lit while on; a press turns it off (never on)
     - position: 11
-      page: -1
+      page: 0
       on_press:
         then:
-          - lambda: id(d200).navigate_page_prev();
+          - if:
+              condition:
+                lambda: 'return id(ha_tv).state;'
+              then:
+                - homeassistant.action:
+                    action: remote.turn_off
+                    data:
+                      entity_id: ${tv}
       pressed_style:
-        color: "#4444AA"
-        icon_color: "#FFFFFF"
+        color: "#666666"
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(ha_tv).state;'
+          color: "#8844DD"
+          icon_id: "television"
+          icon_color: "#FFFFFF"
+          text: "${tv_name}"
+          text_color: "#FFFFFF"
+        - widget: entity_view
+          color: "#222222"
+          icon_id: "television-off"
+          icon_color: "#777777"
+          text: "${tv_name}"
+          text_color: "#BBBBBB"
+
+    # ===== Page 1: weather (from key 6) =====
+    # 0: now: the forecast's condition, the measured temperature, feels-like
+    - position: 0
+      page: 1
+      on_press: &weather_back     # any key of this page goes back to the main page
+        then:
+          - script.stop: weather_back
+          - lambda: id(d200).navigate_page_jump(0);
       layouts:
         - widget: entity_view
           color: "#111122"
-          icon_id: "chevron-left"
-          icon_color: "#7777CC"
-          text: "Wstecz"
-          text_color: "#7777CC"
+          icon_id: !lambda 'return id(wx_icon);'
+          icon_color: "#FFDD66"
+          text: !lambda 'return {wx_deg(id(ha_temp_out).state)};'
+          text_color: "#FFFFFF"
+          text2: !lambda |-
+            if (std::isnan(id(wx_feels))) return {std::string()};
+            return {str_sprintf("odczuwalna %.0f°", id(wx_feels))};
+          text2_color: "#AACCFF"
 
-    - position: 9
-      page: -1
-      on_press:
-        then:
-          - lambda: id(d200).navigate_page_jump(0);
-      pressed_style:
-        color: "#FF9944"
-        icon_color: "#000000"
+    # 1: today, as the daily forecast has it: condition, highest / lowest
+    - position: 1
+      page: 1
+      on_press: *weather_back
       layouts:
         - widget: entity_view
-          when: !lambda 'return id(d200).get_current_page() == 0;'
-          color: "#2A1A0A"
-          icon_id: "home"
-          icon_color: "#FF9944"
-          text: "Start"
-          text_color: "#FF9944"
-        - widget: entity_view
-          color: "#111111"
-          icon_id: "home-outline"
-          icon_color: "#888888"
-          text: "Start"
-          text_color: "#888888"
+          color: "#111122"
+          icon_id: !lambda 'return id(wx_day_icon);'
+          icon_color: "#FFDD66"
+          text: !lambda |-
+            if (std::isnan(id(wx_day_max))) return {std::string("--")};
+            return {str_sprintf("%ld° / %ld°", lroundf(id(wx_day_max)), lroundf(id(wx_day_min)))};  // never "-0°"
+          text_color: "#FFFFFF"
+          text2: "dziś"
+          text2_color: "#AACCFF"
 
+    # 2: the next sunset (or sunrise after it)
+    - position: 2
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: "#2A1A0A"
+          icon_id: !lambda 'return {std::string(wx_sunset_next(id(host_time).now().timestamp, id(wx_sunset), id(wx_sunrise)) ? "weather-sunset-down" : "weather-sunset-up")};'
+          icon_color: "#FF9944"
+          text: !lambda 'return {wx_hhmm(wx_sunset_next(id(host_time).now().timestamp, id(wx_sunset), id(wx_sunrise)) ? id(wx_sunset) : id(wx_sunrise))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {std::string(wx_sunset_next(id(host_time).now().timestamp, id(wx_sunset), id(wx_sunrise)) ? "zachód" : "wschód")};'
+          text2_color: "#FF9944"
+
+    # 3: time until that sunset (or sunrise)
+    - position: 3
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: "#2A1A0A"
+          icon_id: "sun-clock"
+          icon_color: "#FF9944"
+          text: !lambda |-
+            int now = id(host_time).now().timestamp;
+            bool set = wx_sunset_next(now, id(wx_sunset), id(wx_sunrise));
+            return {wx_span((set ? id(wx_sunset) : id(wx_sunrise)) - now)};
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {std::string(wx_sunset_next(id(host_time).now().timestamp, id(wx_sunset), id(wx_sunrise)) ? "do zachodu" : "do wschodu")};'
+          text2_color: "#FF9944"
+
+    # 4: precipitation: falling now (rain sensor or forecast), or when it starts and how
+    # much falls in that spell
+    - position: 4
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(ha_rain_now).state || (id(wx_rain_ts) > 0 && id(wx_rain_ts) <= id(host_time).now().timestamp);'
+          color: "#1A3366"
+          icon_id: !lambda 'return {std::string(id(wx_snow) ? "weather-snowy-heavy" : "weather-pouring")};'
+          icon_color: "#FFFFFF"
+          text: !lambda 'return {std::string(id(wx_snow) ? "śnieg" : "pada")};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {wx_dec(id(wx_rain_mm), " mm")};'
+          text2_color: "#AACCFF"
+        - widget: entity_view
+          when: !lambda 'return id(wx_rain_ts) > 0;'
+          color: !lambda 'return {std::string(id(wx_rain_ts) - id(host_time).now().timestamp < 3 * 3600 ? "#1A3366" : "#111122")};'
+          icon_id: !lambda 'return {std::string(id(wx_snow) ? "weather-snowy" : "weather-rainy")};'
+          icon_color: "#66BBFF"
+          text: !lambda 'return {"za " + wx_span(id(wx_rain_ts) - id(host_time).now().timestamp)};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {wx_dec(id(wx_rain_mm), " mm")};'
+          text2_color: "#66BBFF"
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "umbrella-closed-outline"
+          icon_color: "#777777"
+          text: "brak"
+          text_color: "#BBBBBB"
+          text2: "opadów 6 dni"
+          text2_color: "#777777"
+
+    # 5: wind now and gusts (km/h); amber from 50 km/h gusts
+    - position: 5
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: !lambda 'return {std::string(id(wx_gust) >= 50 ? "#AA5500" : "#111122")};'
+          icon_id: "weather-windy"
+          icon_color: "#AACCFF"
+          text: !lambda 'return {str_sprintf("%.0f km/h", id(wx_wind))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {str_sprintf("porywy %.0f", id(wx_gust))};'
+          text2_color: "#AACCFF"
+
+    # 6: today's PV forecast (both arrays)
+    - position: 6
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: "#1A1A0A"
+          icon_id: "solar-power-variant"
+          icon_color: "#FFDD66"
+          text: !lambda |-
+            return {wx_dec(id(ha_pv_today_1).state + id(ha_pv_today_2).state, " kWh")};
+          text_color: "#FFFFFF"
+          text2: "PV dziś"
+          text2_color: "#FFDD66"
+
+    # 7: today's highest temperature still to come, and when
+    - position: 7
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "thermometer-high"
+          icon_color: "#FF7744"
+          text: !lambda 'return {wx_deg(id(wx_tmax))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {"max " + wx_hhmm(id(wx_tmax_ts))};'
+          text2_color: "#FF7744"
+
+    # 8: the night's lowest temperature (until 9:00), and when; blue below 0°C (frost)
+    - position: 8
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          when: !lambda 'return id(wx_tmin) <= 0;'
+          color: "#1A3A7A"
+          icon_id: "snowflake-thermometer"
+          icon_color: "#FFFFFF"
+          text: !lambda 'return {wx_deg(id(wx_tmin))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {"min " + wx_hhmm(id(wx_tmin_ts))};'
+          text2_color: "#AACCFF"
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "thermometer-low"
+          icon_color: "#66BBFF"
+          text: !lambda 'return {wx_deg(id(wx_tmin))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return {"min " + wx_hhmm(id(wx_tmin_ts))};'
+          text2_color: "#66BBFF"
+
+    # 9: greenhouse temperature; blue below 2°C
+    - position: 9
+      page: 1
+      on_press: *weather_back
+      layouts:
+        - widget: entity_view
+          color: !lambda 'return {std::string(id(ha_greenhouse).state < 2 ? "#1A3A7A" : "#112211")};'
+          icon_id: "greenhouse"
+          icon_color: "#88DD88"
+          text: !lambda 'return {wx_deg(id(ha_greenhouse).state)};'
+          text_color: "#FFFFFF"
+          text2: "szklarnia"
+          text2_color: "#88DD88"
+
+    # 12: back to the main page (any weather key does that; it also goes back by itself after a minute)
+    - position: 12
+      page: 1
+      on_press: *weather_back
+      pressed_style:
+        color: "#4444AA"
+      layouts:
+        - widget: entity_view
+          color: "#111122"
+          icon_id: "arrow-u-left-top"
+          icon_color: "#7777CC"
+          text: "Wróć"
+          text_color: "#7777CC"
+
+    # ===== All pages =====
+    # Pages are off for now. To bring them back: this key, page: N on the sections, and
+    # on_connected's page names above
+    # - position: 12
+    #   page: -1
+    #   on_press:
+    #     then:
+    #       - lambda: id(d200).navigate_page_next();
+    #   pressed_style:
+    #     color: "#4444AA"
+    #     icon_color: "#FFFFFF"
+    #   layouts:
+    #     - widget: entity_view
+    #       color: "#111122"
+    #       icon_id: "page-next-outline"
+    #       icon_color: "#7777CC"
+    #       text: "Strona"
+    #       text_color: "#7777CC"
+    #       text2: !lambda 'return {std::string(id(d200).get_current_page() == 0 ? "${page_0_name}" : "${page_1_name}")};'
+    #       text2_color: "#7777CC"
+
+    # 13 (big key): lock the house; the time large on top (the daemon draws a tall key's
+    # text2 there). Red: a door is open (its name); green: all locked. A press starts a 5 s
+    # countdown (pressed again: cancelled), then house_lock (a new press restarts it)
     - position: 13
       page: -1
+      on_press:
+        then:
+          - if:
+              condition:
+                lambda: 'return id(house_grace) > 0;'
+              then:
+                - script.stop: house_lock_countdown
+                - globals.set: {id: house_grace, value: '0'}
+              else:
+                - script.execute: house_lock_countdown
+      pressed_style:
+        color: "#666666"
       layouts:
-        - widget: status
-          items:
-            - clock
-            - page
-          color: "#111122"
-          text_color: "#AACCFF"
+        - widget: entity_view
+          when: !lambda 'return id(house_grace) > 0;'
+          color: "#2266DD"
+          icon_id: "timer-sand"
+          icon_color: "#FFFFFF"
+          text: !lambda 'return {str_sprintf("Anuluj %d", id(house_grace))};'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#FFFFFF"
+        - widget: entity_view    # waiting for doors to close: those not locked yet
+          when: !lambda 'return id(ha_house_lock_running).state;'
+          color: "#FF8800"
+          icon_id: "lock-clock"
+          icon_color: "#000000"
+          text: !lambda 'return id(doors_unlocked).state;'
+          text_color: "#000000"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#000000"
+        - widget: entity_view
+          when: !lambda 'return !id(doors_open).state.empty();'
+          color: "#DD2222"
+          icon_id: "door-open"
+          icon_color: "#FFFFFF"
+          text: !lambda 'return id(doors_open).state;'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#FFFFFF"
+        - widget: entity_view    # a lock jammed or unavailable
+          when: !lambda 'return !id(doors_alert).state.empty();'
+          color: "#DD2222"
+          icon_id: "lock-alert"
+          icon_color: "#FFFFFF"
+          text: !lambda 'return id(doors_alert).state;'
+          text_color: "#FFFFFF"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#FFFFFF"
+        - widget: entity_view
+          when: !lambda 'return id(doors_unlocked).state.empty();'
+          color: "#1E7A34"
+          icon_id: "home-lock"
+          icon_color: "#FFFFFF"
+          text: "${house_lock_name}"
+          text_color: "#FFFFFF"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#FFFFFF"
+        - widget: entity_view    # all closed, some unlocked
+          color: "#222222"
+          icon_id: "home-lock-open"
+          icon_color: "#777777"
+          text: "${house_lock_name}"
+          text_color: "#BBBBBB"
+          text2: !lambda 'return id(clock_text).state;'
+          text2_color: "#AACCFF"
+
+globals:
+  - id: house_grace          # seconds left before house_lock runs; 0: no countdown
+    type: int
+    initial_value: '0'
+  # Weather page data, from weather_refresh (unix timestamps; 0: none)
+  - {id: wx_icon, type: std::string, initial_value: '"weather-cloudy"'}
+  - {id: wx_feels, type: float, initial_value: 'NAN'}
+  - {id: wx_wind, type: float, initial_value: '0'}
+  - {id: wx_gust, type: float, initial_value: '0'}
+  - {id: wx_tmax, type: float, initial_value: 'NAN'}
+  - {id: wx_tmax_ts, type: int, initial_value: '0'}
+  - {id: wx_tmin, type: float, initial_value: 'NAN'}
+  - {id: wx_tmin_ts, type: int, initial_value: '0'}
+  - {id: wx_rain_ts, type: int, initial_value: '0'}
+  - {id: wx_rain_mm, type: float, initial_value: '0'}
+  - {id: wx_snow, type: bool, initial_value: 'false'}
+  - {id: wx_day_max, type: float, initial_value: 'NAN'}
+  - {id: wx_day_min, type: float, initial_value: 'NAN'}
+  - {id: wx_day_icon, type: std::string, initial_value: '"weather-cloudy"'}
+  - {id: wx_sunset, type: int, initial_value: '0'}
+  - {id: wx_sunrise, type: int, initial_value: '0'}
 
 script:
   - id: compressor_hold
@@ -233,6 +665,161 @@ script:
     then:
       - delay: 1s
       - switch.toggle: sw_compressor
+
+  - id: pc_hold
+    mode: restart
+    then:
+      - delay: 1s
+      - if:
+          condition:
+            binary_sensor.is_on: ha_pc_plug   # with the plug off, Node-RED's topic would turn the PC on
+          then:
+            - homeassistant.action:
+                action: mqtt.publish
+                data:
+                  topic: ${pc_off_topic}
+
+  - id: house_lock_countdown
+    mode: restart
+    then:
+      - globals.set: {id: house_grace, value: '5'}
+      - repeat:
+          count: 5
+          then:
+            - delay: 1s
+            - lambda: 'id(house_grace) -= 1;'
+      - homeassistant.action:
+          action: script.turn_on
+          data:
+            entity_id: ${house_lock}
+
+  - id: backlight_wake       # yard motion, a door: screen on, the timer from now
+    mode: restart
+    then:
+      - light.turn_on: backlight
+      - script.execute: backlight_timer
+
+  - id: backlight_timer      # screen off after backlight_timeout without activity
+    mode: restart
+    then:
+      - delay: ${backlight_timeout}
+      - light.turn_off: backlight
+
+  - id: intercom_ring        # screen on, full-screen animation (a key press ends it)
+    mode: restart
+    then:
+      - script.execute: backlight_wake
+      - lambda: id(d200).send_command("display", "play_animation", "${ring_animation}");
+
+  - id: weather_back         # the weather page goes back to the main page after a minute
+    mode: restart
+    then:
+      - delay: 60s
+      - lambda: id(d200).navigate_page_jump(0);
+
+  # The hourly forecast, boiled down by HA (response_template) to what the weather page shows
+  - id: weather_refresh
+    mode: single
+    then:
+      - if:
+          condition:
+            api.connected:
+          then:
+            - homeassistant.action:
+                action: weather.get_forecasts
+                data:
+                  entity_id: ${weather}
+                  type: hourly
+                capture_response: true
+                response_template: |-
+                  {%- set f = response['${weather}'].forecast -%}
+                  {%- set n = now() -%}
+                  {%- set t0 = as_timestamp(n) - 3600 -%}
+                  {%- set today = n.date() -%}
+                  {%- set nine = n.replace(hour=9, minute=0, second=0, microsecond=0) -%}
+                  {%- set night_end = as_timestamp(nine if n.hour < 9 else nine + timedelta(days=1)) -%}
+                  {%- set ns = namespace(cur=none, tmax=-99.0, tmax_ts=0, tmin=99.0, tmin_ts=0, rain_ts=0, rain_mm=0.0, snow=false, rain_end=false) -%}
+                  {%- for x in f -%}
+                  {%- set ts = as_timestamp(x.datetime) -%}
+                  {%- if ts > t0 -%}
+                  {%- set lt = as_local(as_datetime(x.datetime)) -%}
+                  {%- if ns.cur is none -%}{%- set ns.cur = x -%}{%- endif -%}
+                  {%- if lt.date() == today and x.temperature > ns.tmax -%}{%- set ns.tmax = x.temperature -%}{%- set ns.tmax_ts = ts -%}{%- endif -%}
+                  {%- if ts <= night_end and x.temperature < ns.tmin -%}{%- set ns.tmin = x.temperature -%}{%- set ns.tmin_ts = ts -%}{%- endif -%}
+                  {%- set p = x.precipitation | float(0) -%}
+                  {%- if not ns.rain_end -%}
+                  {%- if p >= 0.1 -%}
+                  {%- if ns.rain_ts == 0 -%}{%- set ns.rain_ts = ts -%}{%- set ns.snow = x.condition in ['snowy', 'snowy-rainy'] or x.temperature <= 0.5 -%}{%- endif -%}
+                  {%- set ns.rain_mm = ns.rain_mm + p -%}
+                  {%- elif ns.rain_ts != 0 -%}{%- set ns.rain_end = true -%}{%- endif -%}
+                  {%- endif -%}
+                  {%- endif -%}
+                  {%- endfor -%}
+                  {%- set c = ns.cur or {} -%}
+                  {%- set icons = {'clear-night': 'weather-night', 'partlycloudy': 'weather-partly-cloudy', 'exceptional': 'alert-circle-outline'} -%}
+                  {%- set cond = states('${weather}') -%}
+                  {%- if is_state('sun.sun', 'below_horizon') and cond in ['sunny', 'partlycloudy'] -%}
+                  {%- set icon = 'weather-night' if cond == 'sunny' else 'weather-night-partly-cloudy' -%}
+                  {%- else -%}{%- set icon = icons.get(cond, 'weather-' ~ cond) -%}{%- endif -%}
+                  {{ {"icon": icon, "feels": c.apparent_temperature | default(none), "wind": c.wind_speed | default(0), "gust": c.wind_gust_speed | default(0),
+                      "tmax": ns.tmax, "tmax_ts": ns.tmax_ts | int, "tmin": ns.tmin, "tmin_ts": ns.tmin_ts | int,
+                      "rain_ts": ns.rain_ts | int, "rain_mm": ns.rain_mm | round(1), "snow": ns.snow,
+                      "sunset": as_timestamp(state_attr('sun.sun', 'next_setting')) | int(0),
+                      "sunrise": as_timestamp(state_attr('sun.sun', 'next_rising')) | int(0)} | tojson }}
+                on_success:
+                  - lambda: |-
+                      JsonDocument doc;
+                      JsonObjectConst r = wx_unwrap(response, doc);
+                      if (r["sunset"].isNull()) {
+                        std::string raw;
+                        serializeJson(response, raw);
+                        ESP_LOGW("weather", "unexpected response: %.300s", raw.c_str());
+                        return;
+                      }
+                      id(wx_icon) = r["icon"] | "weather-cloudy";
+                      id(wx_feels) = r["feels"].isNull() ? NAN : r["feels"].as<float>();
+                      id(wx_wind) = r["wind"] | 0.0f;
+                      id(wx_gust) = r["gust"] | 0.0f;
+                      id(wx_tmax) = r["tmax"] | NAN;
+                      id(wx_tmax_ts) = r["tmax_ts"] | 0;
+                      id(wx_tmin) = r["tmin"] | NAN;
+                      id(wx_tmin_ts) = r["tmin_ts"] | 0;
+                      id(wx_rain_ts) = r["rain_ts"] | 0;
+                      id(wx_rain_mm) = r["rain_mm"] | 0.0f;
+                      id(wx_snow) = r["snow"] | false;
+                      id(wx_sunset) = r["sunset"] | 0;
+                      id(wx_sunrise) = r["sunrise"] | 0;
+                      ESP_LOGI("weather", "%s, max %.1f, min %.1f, rain in %d s", id(wx_icon).c_str(), id(wx_tmax), id(wx_tmin),
+                               id(wx_rain_ts) ? id(wx_rain_ts) - (int) id(host_time).now().timestamp : -1);
+                on_error:
+                  - logger.log:
+                      level: WARN
+                      format: "weather.get_forecasts: %s"
+                      args: ['error.c_str()']
+            # Today's entry of the daily forecast, as it is (key 8)
+            - homeassistant.action:
+                action: weather.get_forecasts
+                data:
+                  entity_id: ${weather}
+                  type: daily
+                capture_response: true
+                response_template: |-
+                  {%- set d = response['${weather}'].forecast | selectattr('datetime', 'search', '^' ~ now().date().isoformat()) | list | first | default({}) -%}
+                  {%- set c = d.condition | default('cloudy') -%}
+                  {%- set icons = {'clear-night': 'weather-night', 'partlycloudy': 'weather-partly-cloudy', 'exceptional': 'alert-circle-outline'} -%}
+                  {{ {"max": d.temperature | default(none), "min": d.templow | default(none), "icon": icons.get(c, 'weather-' ~ c)} | tojson }}
+                on_success:
+                  - lambda: |-
+                      JsonDocument doc;
+                      JsonObjectConst r = wx_unwrap(response, doc);
+                      id(wx_day_max) = r["max"].isNull() ? NAN : r["max"].as<float>();
+                      id(wx_day_min) = r["min"].isNull() ? NAN : r["min"].as<float>();
+                      id(wx_day_icon) = r["icon"] | "weather-cloudy";
+                on_error:
+                  - logger.log:
+                      level: WARN
+                      format: "weather.get_forecasts daily: %s"
+                      args: ['error.c_str()']
 
 switch:
   # Compressor: same idiom as d200-toggle.yaml, but its key needs a hold (see above)
@@ -261,13 +848,199 @@ binary_sensor:
       then:
         - lambda: id(sw_compressor).publish_state(x);
 
+  - platform: homeassistant
+    id: ha_yard_1
+    entity_id: ${yard_1}
+  - platform: homeassistant
+    id: ha_yard_2
+    entity_id: ${yard_2}
+
+  - platform: homeassistant
+    id: ha_house_lights
+    entity_id: ${house_lights}
+
+  - platform: homeassistant
+    id: ha_pc_plug
+    entity_id: ${pc_plug}
+
+  - platform: homeassistant
+    id: ha_tv
+    entity_id: ${tv}
+
+  - platform: homeassistant
+    id: ha_rain_now
+    entity_id: ${rain_now}
+
+  - platform: homeassistant
+    id: ha_house_lock_running
+    entity_id: ${house_lock_running}
+
+  - platform: homeassistant    # on: open. Opening the main door ends the 5 s countdown
+    id: ha_door_1_contact
+    entity_id: ${door_1_contact}
+    on_press:
+      then:
+        - script.stop: house_lock_countdown
+        - globals.set: {id: house_grace, value: '0'}
+    on_state:
+      then:
+        - script.execute: backlight_wake
+  - platform: homeassistant
+    id: ha_door_2_contact
+    entity_id: ${door_2_contact}
+    on_state:
+      then:
+        - script.execute: backlight_wake
+  - platform: homeassistant
+    id: ha_door_3_contact
+    entity_id: ${door_3_contact}
+    on_state:
+      then:
+        - script.execute: backlight_wake
+  - platform: homeassistant
+    id: ha_door_4_contact
+    entity_id: ${door_4_contact}
+    on_state:
+      then:
+        - script.execute: backlight_wake
+
+  - platform: homeassistant    # yard motion (mmWave): wakes the screen
+    id: ha_yard_motion_1
+    entity_id: ${yard_motion_1}
+    on_press:
+      then:
+        - script.execute: backlight_wake
+  - platform: homeassistant
+    id: ha_yard_motion_2
+    entity_id: ${yard_motion_2}
+    on_press:
+      then:
+        - script.execute: backlight_wake
+
   - platform: template
     id: d200_connected
     name: "Display Connected"
     device_class: connectivity
     lambda: 'return id(d200).is_connected();'
 
+text_sensor:
+  - platform: homeassistant
+    id: ha_door_1_lock
+    entity_id: ${door_1_lock}
+  - platform: homeassistant
+    id: ha_door_2_lock
+    entity_id: ${door_2_lock}
+  - platform: homeassistant
+    id: ha_door_3_lock
+    entity_id: ${door_3_lock}
+  - platform: homeassistant
+    id: ha_door_4_lock
+    entity_id: ${door_4_lock}
+
+  - platform: template
+    id: clock_text
+    internal: true
+    update_interval: 1s
+    lambda: |-
+      auto t = id(host_time).now();
+      return {t.is_valid() ? t.strftime("%H:%M") : std::string("--:--")};
+
+  - platform: homeassistant
+    id: ha_intercom_1
+    entity_id: ${intercom_1}
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: |-
+                // The event entity's state is the time of the last ring: a new one is a ring. The
+                // first value (at connect) and unavailable/unknown are not
+                static std::string last;
+                if (x == "unavailable" || x == "unknown" || x.empty()) return false;
+                bool ring = !last.empty() && x != last;
+                last = x;
+                return ring;
+            then:
+              - script.execute: intercom_ring
+  - platform: homeassistant
+    id: ha_intercom_2
+    entity_id: ${intercom_2}
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: |-
+                // The event entity's state is the time of the last ring: a new one is a ring. The
+                // first value (at connect) and unavailable/unknown are not
+                static std::string last;
+                if (x == "unavailable" || x == "unknown" || x.empty()) return false;
+                bool ring = !last.empty() && x != last;
+                last = x;
+                return ring;
+            then:
+              - script.execute: intercom_ring
+
+  # For the big key: the one door's name, "N drzwi" for several, "" for none
+  - platform: template
+    id: doors_open
+    internal: true
+    update_interval: 1s
+    lambda: |-
+      std::vector<std::string> v;
+      if (id(ha_door_1_contact).state) v.push_back("${door_1_name}");
+      if (id(ha_door_2_contact).state) v.push_back("${door_2_name}");
+      if (id(ha_door_3_contact).state) v.push_back("${door_3_name}");
+      if (id(ha_door_4_contact).state) v.push_back("${door_4_name}");
+      return {v.empty() ? std::string() : v.size() == 1 ? v[0] : to_string(v.size()) + " drzwi"};
+
+  - platform: template
+    id: doors_unlocked
+    internal: true
+    update_interval: 1s
+    lambda: |-
+      std::vector<std::string> v;
+      if (id(ha_door_1_lock).state != "locked") v.push_back("${door_1_name}");
+      if (id(ha_door_2_lock).state != "locked") v.push_back("${door_2_name}");
+      if (id(ha_door_3_lock).state != "locked") v.push_back("${door_3_name}");
+      if (id(ha_door_4_lock).state != "locked") v.push_back("${door_4_name}");
+      return {v.empty() ? std::string() : v.size() == 1 ? v[0] : to_string(v.size()) + " drzwi"};
+
+  - platform: template    # jammed, unavailable, not known yet
+    id: doors_alert
+    internal: true
+    update_interval: 1s
+    lambda: |-
+      auto bad = [](const std::string &s) {
+        return s != "locked" && s != "unlocked" && s != "locking" && s != "unlocking" &&
+               s != "open" && s != "opening";
+      };
+      std::vector<std::string> v;
+      if (bad(id(ha_door_1_lock).state)) v.push_back("${door_1_name}");
+      if (bad(id(ha_door_2_lock).state)) v.push_back("${door_2_name}");
+      if (bad(id(ha_door_3_lock).state)) v.push_back("${door_3_name}");
+      if (bad(id(ha_door_4_lock).state)) v.push_back("${door_4_name}");
+      return {v.empty() ? std::string() : v.size() == 1 ? v[0] : to_string(v.size()) + " drzwi"};
+
 sensor:
+  - platform: homeassistant
+    id: ha_pc_power
+    entity_id: ${pc_power}
+
+  - platform: homeassistant
+    id: ha_temp_out
+    entity_id: ${temp_out}
+
+  - platform: homeassistant
+    id: ha_greenhouse
+    entity_id: ${greenhouse_temp}
+
+  - platform: homeassistant
+    id: ha_pv_today_1
+    entity_id: ${pv_today_1}
+  - platform: homeassistant
+    id: ha_pv_today_2
+    entity_id: ${pv_today_2}
+
   - platform: template
     name: "Current Page"
     icon: mdi:book-open-page-variant

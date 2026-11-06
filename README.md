@@ -14,7 +14,7 @@ the firmware and the host build. Upstream's ESP32 variant is kept: see [docs/com
 ## Status
 
 Works on the author's D200: ESPHome 2026.10.2 with the encrypted API, OTA updates, Home Assistant
-actions, two pages of keys. The daemon uses about 17.5 MB RSS and 2% of a core. Open issues and measurements:
+actions, a main page of keys and a weather page. The daemon uses about 17.5 MB RSS and 2% of a core. Open issues and measurements:
 [docs/development-notes.md](docs/development-notes.md).
 
 ## Hardware
