@@ -17,7 +17,8 @@
 #   forecast), 2 next sunset or sunrise, 3 time to it, 4 precipitation, 5 wind, 6 PV today,
 #   7 today's max still to come, 8 night's min, 9 greenhouse, 12 back
 # The screen is dark until yard motion, a door opening or closing, or a key press, and goes dark
-# again backlight_timeout after the last of them. In the dark a key press only wakes it.
+# again backlight_timeout after the last door or key, but not before motion_timeout after the
+# last motion (as long as Node-RED keeps the yard lights on). In the dark a press only wakes it.
 # The intercom ringing shows a full-screen animation (config/ring.gif on the D200).
 # Toggle keys: d200-toggle.yaml; vacuum keys: d200-vacuum.yaml; text helpers: d200_weather.h.
 
@@ -28,6 +29,9 @@ substitutions:
   yard_motion_1: binary_sensor.outside_motion_presence
   yard_motion_2: binary_sensor.outside_warsztat_motion_presence
   backlight_timeout: 60s
+  # The mmWave sensors report someone standing still in bursts with gaps of a minute or more:
+  # after motion the screen stays on as long as Node-RED's motion lights (5 min)
+  motion_timeout: 5min
   # Intercom: a ring shows the daemon's full-screen animation (config/ring.gif on the D200)
   intercom_1: event.domofon_rx_domofon_bramka
   intercom_2: event.domofon_rx_domofon_drzwi
@@ -693,17 +697,35 @@ script:
           data:
             entity_id: ${house_lock}
 
-  - id: backlight_wake       # yard motion, a door: screen on, the timer from now
+  - id: backlight_wake       # a door: screen on, the timer from now
     mode: restart
     then:
       - light.turn_on: backlight
       - script.execute: backlight_timer
 
-  - id: backlight_timer      # screen off after backlight_timeout without activity
+  # Two timers; the screen goes off when the second of them runs out
+  - id: backlight_timer      # backlight_timeout after a key or a door
     mode: restart
     then:
       - delay: ${backlight_timeout}
-      - light.turn_off: backlight
+      - if:
+          condition:
+            not:
+              script.is_running: motion_timer
+          then:
+            - light.turn_off: backlight
+
+  - id: motion_timer         # motion_timeout after yard motion
+    mode: restart
+    then:
+      - light.turn_on: backlight
+      - delay: ${motion_timeout}
+      - if:
+          condition:
+            not:
+              script.is_running: backlight_timer
+          then:
+            - light.turn_off: backlight
 
   - id: intercom_ring        # screen on, full-screen animation (a key press ends it)
     mode: restart
@@ -909,13 +931,13 @@ binary_sensor:
     entity_id: ${yard_motion_1}
     on_press:
       then:
-        - script.execute: backlight_wake
+        - script.execute: motion_timer
   - platform: homeassistant
     id: ha_yard_motion_2
     entity_id: ${yard_motion_2}
     on_press:
       then:
-        - script.execute: backlight_wake
+        - script.execute: motion_timer
 
   - platform: template
     id: d200_connected
