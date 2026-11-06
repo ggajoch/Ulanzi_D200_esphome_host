@@ -337,6 +337,10 @@ func main() {
 			markButtonDirty(id)
 		}
 	}
+	transport.AnimationHandler = func(seconds int) {
+		startAnimation(time.Duration(seconds) * time.Second)
+	}
+
 	transport.RotationHandler = func(deg int) {
 		if rotation.Swap(int32(deg)) != int32(deg) {
 			fmt.Printf("Rotation: %d\n", deg)
@@ -413,6 +417,10 @@ func runControl(fb []byte, fIn *os.File) {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	go func() {
 		for range ticker.C {
+			// A full-screen animation covers the keys while it runs
+			if drawAnimation(fb) {
+				continue
+			}
 			// Auto-mark animated buttons dirty
 			markAnimatedButtonsDirty()
 			// Full redraw if dirtyAll is set
@@ -448,6 +456,7 @@ func runControl(fb []byte, fIn *os.File) {
 		Code  uint16
 		Value int32
 	}
+	animKey := -1 // the key that ended an animation: its release is dropped too
 	for {
 		if err := binary.Read(fIn, binary.LittleEndian, &ev); err != nil {
 			fmt.Println("Input read failed:", err)
@@ -456,6 +465,16 @@ func runControl(fb []byte, fIn *os.File) {
 		typ, code, val := ev.Type, ev.Code, ev.Value
 
 		if typ == 1 {
+			// A key press ends a running animation and does nothing else
+			if val == 1 && stopAnimation() {
+				animKey = int(code)
+				continue
+			}
+			if val == 0 && int(code) == animKey {
+				animKey = -1
+				continue
+			}
+
 			m := getMode()
 
 			if m == "calib" {
@@ -760,6 +779,14 @@ func drawButtonContent(img *image.RGBA, i int, rect image.Rectangle, currentMode
 				t1 := func(size float64) float64 { return ui.FitSize(s.Text, size, maxW) }
 				t2 := func(size float64) float64 { return ui.FitSize(s.Text2, size, maxW) }
 
+				// A tall key (the big key, turned): text2 large in the top third (e.g. a clock),
+				// the icon and text below it, laid out as without text2
+				if hasText2 && rect.Dy() > rect.Dx()*3/2 {
+					ui.DrawText(img, cx, rect.Min.Y+rect.Dy()/5, t2(72), s.Text2, text2Col)
+					cy = rect.Min.Y + rect.Dy()*5/8
+					hasText2 = false
+				}
+
 				// Sized for a ~200 px key: content within cy±80. MDI glyphs fill 65-85% of their font size
 				if hasIcon {
 					if hasText1 && hasText2 {
@@ -857,7 +884,11 @@ func updateDisplay(fb []byte) {
 	for i := 0; i < 14; i++ {
 		drawTile(img, i, currentMode)
 	}
+	blit(fb, img)
+}
 
+// blit copies the whole logical (landscape) image to the framebuffer, turned
+func blit(fb []byte, img *image.RGBA) {
 	src := img.Pix
 	for ly := 0; ly < LOG_HEIGHT; ly++ {
 		srcRow := ly * LOG_WIDTH * 4

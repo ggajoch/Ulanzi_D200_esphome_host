@@ -63,6 +63,9 @@ var DisplayDirtyHandler func(buttonID int)
 // RotationHandler is called when a set_rotation command is received (0, 90, 180 or 270)
 var RotationHandler func(deg int)
 
+// AnimationHandler is called when a play_animation command is received (seconds, 1-120)
+var AnimationHandler func(seconds int)
+
 // parseCommand parses NDJSON command protocol
 // Format: {"type":"command","module":"...","action":"...","params":[...]}
 func parseCommand(line string) (*Command, error) {
@@ -266,6 +269,19 @@ func handleDisplayCommand(action string, params []string) Response {
 			},
 		})
 		return Response{Status: "ok", Data: fmt.Sprintf("%d", pct)}
+	case "play_animation":
+		// Params: [seconds]: a full-screen animation over the keys (default 15, 1-120)
+		secs, err := 15, error(nil)
+		if len(params) >= 1 {
+			secs, err = strconv.Atoi(params[0])
+		}
+		if err != nil || secs < 1 || secs > 120 {
+			return Response{Status: "error", Code: CODE_INVALID, Message: "Seconds must be 1-120"}
+		}
+		if AnimationHandler != nil {
+			AnimationHandler(secs)
+		}
+		return Response{Status: "ok"}
 	case "set_rotation":
 		// Params: <degrees>: how far the D200 is mounted turned clockwise from landscape
 		deg, err := -1, error(nil)
