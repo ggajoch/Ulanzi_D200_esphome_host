@@ -569,9 +569,11 @@ ulanzi_d200:
     #       text2: !lambda 'return {std::string(id(d200).get_current_page() == 0 ? "${page_0_name}" : "${page_1_name}")};'
     #       text2_color: "#7777CC"
 
-    # 13 (big key): lock the house; the time large on top (the daemon draws a tall key's
-    # text2 there). Red: a door is open (its name); green: all locked. A press starts a 5 s
-    # countdown (pressed again: cancelled), then house_lock (a new press restarts it)
+    # 13 (big key): lock the house. Large on top (the daemon draws a tall key's text2 there):
+    # the countdown, the doors still to lock, else the time. Red: a door is open (its name);
+    # orange: locking; green: all locked. A press starts a 5 s countdown (pressed again:
+    # cancelled), then house_lock; while it locks or with all locked, a press runs it again at
+    # once (the lights' 5 min from now, a door still open locked once closed)
     - position: 13
       page: -1
       on_press:
@@ -583,7 +585,16 @@ ulanzi_d200:
                 - script.stop: house_lock_countdown
                 - globals.set: {id: house_grace, value: '0'}
               else:
-                - script.execute: house_lock_countdown
+                - if:
+                    condition:
+                      lambda: 'return id(ha_house_lock_running).state || id(doors_unlocked).state.empty();'
+                    then:
+                      - homeassistant.action:
+                          action: script.turn_on
+                          data:
+                            entity_id: ${house_lock}
+                    else:
+                      - script.execute: house_lock_countdown
       pressed_style:
         color: "#666666"
       layouts:
@@ -592,18 +603,21 @@ ulanzi_d200:
           color: "#2266DD"
           icon_id: "timer-sand"
           icon_color: "#FFFFFF"
-          text: !lambda 'return {str_sprintf("Anuluj %d", id(house_grace))};'
+          text: "Anuluj"
           text_color: "#FFFFFF"
-          text2: !lambda 'return id(clock_text).state;'
+          text2: !lambda 'return {to_string(id(house_grace))};'
           text2_color: "#FFFFFF"
-        - widget: entity_view    # waiting for doors to close: those not locked yet
+        - widget: entity_view    # locking: how many doors are not locked yet
           when: !lambda 'return id(ha_house_lock_running).state;'
           color: "#FF8800"
           icon_id: "lock-clock"
           icon_color: "#000000"
-          text: !lambda 'return id(doors_unlocked).state;'
+          text: "do zamknięcia"
           text_color: "#000000"
-          text2: !lambda 'return id(clock_text).state;'
+          text2: !lambda |-
+            int n = (id(ha_door_1_lock).state != "locked") + (id(ha_door_2_lock).state != "locked") +
+                    (id(ha_door_3_lock).state != "locked") + (id(ha_door_4_lock).state != "locked");
+            return {to_string(n)};
           text2_color: "#000000"
         - widget: entity_view
           when: !lambda 'return !id(doors_open).state.empty();'

@@ -65,8 +65,11 @@ Besides its entities, the config uses things set up in the author's Home Assista
   cascade (lock all the other doors at once) is skipped by a gate in the `tedee` flow.
 - The PC key publishes `nodered/gg_pc_toggle`, which Node-RED turns into a shutdown, then cuts the plug.
 - `script.zamknij_dom` also switches the outdoor lights on for 5 min when it is dark (or they are on), and an
-  automation runs it when the main Tedee is locked from outside HA (keypad, app, by hand). Node-RED's cascade
-  waits 2 s before checking whether the per-door script runs.
+  automation runs it when the main Tedee is locked from its keypad or by hand. The Tedee integration writes
+  `locking` in the context of the `lock.lock` call and `locked` with none, so the automation looks at the
+  `locking` before it (from a script, automation or user: skipped) and also skips 2 min after `zamknij_dom`;
+  the per-door script never calls `lock.lock` on a locked lock (that alone made it loop: locked → run again →
+  locking → locked). Node-RED's cascade waits 2 s before checking whether the per-door script runs.
 
 ## Build and deploy
 
