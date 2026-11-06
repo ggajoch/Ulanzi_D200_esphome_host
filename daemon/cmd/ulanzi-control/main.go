@@ -785,6 +785,22 @@ func drawButtonContent(img *image.RGBA, i int, rect image.Rectangle, currentMode
 					ui.DrawText(img, cx, rect.Min.Y+rect.Dy()/5, t2(72), s.Text2, text2Col)
 					cy = rect.Min.Y + rect.Dy()*5/8
 					hasText2 = false
+					// More than two words that don't fit on one line: one a line, under a smaller icon
+					if words := strings.Fields(s.Text); len(words) > 2 && t1(44) < 44 {
+						size := 36.0
+						for _, w := range words {
+							size = min(size, ui.FitSize(w, 36, maxW))
+						}
+						step := int(size * 1.25)
+						y := cy - (64+len(words)*step)/2 // the block's top: a 64 px icon, then the lines
+						if hasIcon {
+							ui.DrawIcon(img, cx, y+32, 64, s.IconID, iconCol)
+						}
+						for i, w := range words {
+							ui.DrawText(img, cx, y+64+step/2+i*step, size, w, textCol)
+						}
+						hasIcon, hasText1 = false, false // drawn
+					}
 				}
 
 				// Sized for a ~200 px key: content within cy±80. MDI glyphs fill 65-85% of their font size

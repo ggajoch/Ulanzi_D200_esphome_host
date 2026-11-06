@@ -244,7 +244,7 @@ The standard button appearance: icon, primary text, secondary text, background c
 | `icon_color` | string/lambda | `"#FFFFFF"` | Icon color |
 | `text` | string/lambda | `""` | Primary text |
 | `text_color` | string/lambda | `"#FFFFFF"` | Primary text color |
-| `text2` | string/lambda | `""` | Secondary text. In a tall key (the big key at `rotation: 90`/`270`) it is drawn large at the top, e.g. a clock |
+| `text2` | string/lambda | `""` | Secondary text. In a tall key (the big key at `rotation: 90`/`270`) it is drawn large at the top, e.g. a clock, and a `text` of more than two words that doesn't fit on a line goes one word a line |
 | `text2_color` | string/lambda | `"#FFFFFF"` | Secondary text color |
 | `style` | string/lambda | `"constant"` | Animation hint (`constant`, `slow`, `fast`) |
 
