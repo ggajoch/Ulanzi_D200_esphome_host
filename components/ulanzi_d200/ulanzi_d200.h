@@ -145,6 +145,7 @@ class UlanziBridge : public Component, public uart::UARTDevice {
   void reset_all_buttons();
   void set_brightness(uint8_t brightness);
   void set_rotation(int rotation) { this->rotation_ = rotation; }
+  void set_wake_on_press(bool wake) { this->wake_on_press_ = wake; }
   void toggle_display();
   void send_sensor_reading(const char *sensor, float value);
   void send_notification(int button_id, int page_id, const char *message);
@@ -274,6 +275,10 @@ class UlanziBridge : public Component, public uart::UARTDevice {
 
   // Mounting rotation (0, 90, 180, 270 degrees clockwise), sent with every full config
   int rotation_{0};
+
+  // wake_on_press: a press while the backlight is off only turns it on; its release is dropped too
+  bool wake_on_press_{false};
+  int wake_button_{-1};
 
   // Batch command queue (serialized: one batch in flight at a time)
   std::vector<std::string> pending_batch_;

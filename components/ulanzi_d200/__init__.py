@@ -67,6 +67,7 @@ CONF_CHIPS = 'chips'
 CONF_LABEL = 'label'
 CONF_BG_COLOR = 'bg_color'
 CONF_BACKLIGHT = 'backlight'
+CONF_WAKE_ON_PRESS = 'wake_on_press'
 CONF_SERVICE_ID = 'service_id'
 
 
@@ -147,6 +148,7 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_BACKLIGHT, default={CONF_NAME: 'Display Backlight'}): BACKLIGHT_SCHEMA,
     # How far the D200 is mounted turned clockwise from landscape (docs/configuration.md)
     cv.Optional(CONF_ROTATION, default=0): cv.one_of(0, 90, 180, 270, int=True),
+    cv.Optional(CONF_WAKE_ON_PRESS, default=False): cv.boolean,
     cv.Optional(CONF_ON_CONNECTED): automation.validate_automation({
         cv.GenerateID(automation.CONF_TRIGGER_ID): cv.declare_id(ConnectedTrigger),
     }),
@@ -174,6 +176,7 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
     cg.add(var.set_rotation(config[CONF_ROTATION]))
+    cg.add(var.set_wake_on_press(config[CONF_WAKE_ON_PRESS]))
 
     # Create backlight light entity via proper ESPHome registration
     await light.new_light(config[CONF_BACKLIGHT], var)

@@ -361,6 +361,20 @@ void UlanziBridge::parse_json_event_(const std::string &json) {
 
   std::string state = json.substr(state_value_start, state_value_end - state_value_start);
 
+  // wake_on_press: with the backlight off, a press only turns it on; neither it nor its release
+  // reaches the sections or on_section_press/release
+  if (state == "pressed" && this->wake_on_press_ && this->backlight_light_state_ != nullptr &&
+      !this->backlight_light_state_->remote_values.is_on()) {
+    ESP_LOGD(TAG, "Position %d pressed with the backlight off: waking only", button_id);
+    this->wake_button_ = button_id;
+    this->backlight_light_state_->turn_on().perform();
+    return;
+  }
+  if (state == "released" && button_id == this->wake_button_) {
+    this->wake_button_ = -1;
+    return;
+  }
+
   // Find the section for this physical position
   int si = this->find_section_for_position_(button_id);
 
