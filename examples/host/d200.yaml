@@ -81,8 +81,10 @@ substitutions:
   # Dom
   vac_down: vacuum.vac_saros
   vac_down_start: button.vac_saros_smart   # the Roborock routine the "VACUUM" button runs
+  vac_down_task: binary_sensor.vac_saros_cleaning   # on for the whole job; the vacuum says "docked" while it washes the mop
   vac_down_name: "Odkurzacz parter"
   vac_up: vacuum.roborock_s5_max_2_2
+  vac_up_task: binary_sensor.roborock_s5_max_2_cleaning
   vac_up_name: "Odkurzacz piętro"
   # PC: plug with power metering; Node-RED's MQTT topic shuts it down, then cuts the plug
   pc_plug: switch.rack_kompe
@@ -166,8 +168,8 @@ packages:
   garden: !include {file: d200-toggle.yaml, vars: {key: garden, entity: "${garden}", label: "${garden_name}", page: 0, position: 1, icon_on: pine-tree, icon_off: pine-tree}}
   grill: !include {file: d200-toggle.yaml, vars: {key: grill, entity: "${grill}", label: "${grill_name}", page: 0, position: 2, icon_on: grill, icon_off: grill-outline, color_on: "#FF5500"}}
   workshop_power: !include {file: d200-toggle.yaml, vars: {key: workshop_power, entity: "${workshop_power}", label: "${workshop_power_name}", page: 0, position: 4, icon_on: power-plug, icon_off: power-plug-off, color_on: "#22AA44"}}
-  vac_down: !include {file: d200-vacuum.yaml, vars: {key: vac_down, vacuum: "${vac_down}", start_action: button.press, start_entity: "${vac_down_start}", label: "${vac_down_name}", page: 0, position: 7}}
-  vac_up: !include {file: d200-vacuum.yaml, vars: {key: vac_up, vacuum: "${vac_up}", start_action: vacuum.start, start_entity: "${vac_up}", label: "${vac_up_name}", page: 0, position: 8}}
+  vac_down: !include {file: d200-vacuum.yaml, vars: {key: vac_down, vacuum: "${vac_down}", task: "${vac_down_task}", start_action: button.press, start_entity: "${vac_down_start}", label: "${vac_down_name}", page: 0, position: 7}}
+  vac_up: !include {file: d200-vacuum.yaml, vars: {key: vac_up, vacuum: "${vac_up}", task: "${vac_up_task}", start_action: vacuum.start, start_entity: "${vac_up}", label: "${vac_up_name}", page: 0, position: 8}}
 
 ulanzi_d200:
   id: d200

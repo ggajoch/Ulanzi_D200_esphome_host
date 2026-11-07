@@ -1,15 +1,22 @@
 # One D200 key for a Home Assistant vacuum: the colour shows its state; a press sends it
-# home while it cleans or returns, otherwise starts it (start_action on start_entity, e.g.
+# home while it cleans, returns or its task runs, otherwise starts it (start_action on start_entity, e.g.
 # vacuum.start on the vacuum, or button.press on a Roborock routine button).
+# task: a binary_sensor on for the whole job (Roborock: binary_sensor.<vacuum>_cleaning). The vacuum
+# entity stays "docked" while the robot washes its mop in the dock, for minutes after a start.
 #
 # Include from d200.yaml:
-#   name: !include {file: d200-vacuum.yaml, vars: {key: ..., vacuum: ..., start_action: ..., start_entity: ..., label: ..., page: ..., position: ...}}
-# key must be unique (it names the id ha_<key>).
+#   name: !include {file: d200-vacuum.yaml, vars: {key: ..., vacuum: ..., task: ..., start_action: ..., start_entity: ..., label: ..., page: ..., position: ...}}
+# key must be unique (it names the ids ha_<key>, ha_<key>_task).
 
 text_sensor:
   - platform: homeassistant
     id: ha_${key}
     entity_id: ${vacuum}
+
+binary_sensor:
+  - platform: homeassistant
+    id: ha_${key}_task
+    entity_id: ${task}
 
 ulanzi_d200:
   sections:
@@ -19,7 +26,7 @@ ulanzi_d200:
         then:
           - if:
               condition:
-                lambda: 'return id(ha_${key}).state == "cleaning" || id(ha_${key}).state == "returning";'
+                lambda: 'return id(ha_${key}).state == "cleaning" || id(ha_${key}).state == "returning" || id(ha_${key}_task).state;'
               then:
                 - homeassistant.action:
                     action: vacuum.return_to_base
@@ -34,13 +41,6 @@ ulanzi_d200:
         color: "#666666"
       layouts:
         - widget: entity_view
-          when: !lambda 'return id(ha_${key}).state == "cleaning";'
-          color: "#2266DD"
-          icon_id: "robot-vacuum"
-          icon_color: "#FFFFFF"
-          text: "${label}"
-          text_color: "#FFFFFF"
-        - widget: entity_view
           when: !lambda 'return id(ha_${key}).state == "returning";'
           color: "#1A3366"
           icon_id: "robot-vacuum"
@@ -51,6 +51,13 @@ ulanzi_d200:
           when: !lambda 'return id(ha_${key}).state == "error";'
           color: "#DD2222"
           icon_id: "robot-vacuum-alert"
+          icon_color: "#FFFFFF"
+          text: "${label}"
+          text_color: "#FFFFFF"
+        - widget: entity_view
+          when: !lambda 'return id(ha_${key}).state == "cleaning" || id(ha_${key}_task).state;'
+          color: "#2266DD"
+          icon_id: "robot-vacuum"
           icon_color: "#FFFFFF"
           text: "${label}"
           text_color: "#FFFFFF"

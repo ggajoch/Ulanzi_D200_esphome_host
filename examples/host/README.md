@@ -12,7 +12,7 @@ Home Assistant ──API 6053──▶ /data/esphome/d200 ──/run/d200-esp �
 |---|---|
 | `d200.yaml` | ESPHome config. HA entity IDs and key labels are the `substitutions:` at the top |
 | `d200-toggle.yaml` | package for one key that toggles an HA entity (template switch + `homeassistant` binary_sensor) |
-| `d200-vacuum.yaml` | package for one vacuum key: colour = state, a press starts it or sends it home |
+| `d200-vacuum.yaml` | package for one vacuum key: colour = state (whole job, from its task sensor), a press starts it or sends it home |
 | `d200_weather.h` | text helpers for the keys (decimal comma, times, time spans), `esphome: includes` |
 | `secrets.yaml.example` | template for `secrets.yaml` (`api_encryption_key`); `build.sh` generates one if missing |
 | `build.sh` | builds `../../components` + `d200.yaml` and `../../daemon` into `~/d200/esphome/out/{d200,ulanzi-control}` |
