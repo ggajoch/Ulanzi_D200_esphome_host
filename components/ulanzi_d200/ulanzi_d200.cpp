@@ -1111,6 +1111,8 @@ std::string UlanziBridge::build_section_json_config_(int section_index) {
     json += ",\"wide_layout\":\"chips\"";
   } else if (layout.widget_type == "notification") {
     json += ",\"wide_layout\":\"notification\"";
+  } else if (layout.widget_type == "forecast") {
+    json += ",\"wide_layout\":\"forecast\"";
   }
   // entity_view = no wide_layout (default)
 

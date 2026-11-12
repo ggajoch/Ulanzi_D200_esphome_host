@@ -769,6 +769,8 @@ func drawButtonContent(img *image.RGBA, i int, rect image.Rectangle, currentMode
 				drawGauge(img, rect, btn, s, iconCol, textCol, text2Col)
 			case "notification":
 				drawNotification(img, rect, btn, s, textCol, text2Col)
+			case "forecast":
+				drawForecast(img, rect, col, s, iconCol, textCol, text2Col)
 			default:
 				hasIcon := s.IconID != ""
 				hasText1 := s.Text != ""

@@ -46,7 +46,7 @@ type ButtonConfig struct {
 	TargetPage    int                    `json:"target_page"`   // For page-jump
 	CurrentState  string                 `json:"current_state"` // "default", "active", "pressed"
 	States        map[string]ButtonState `json:"states"`
-	WideLayout    string                 `json:"wide_layout,omitempty"`  // "side-by-side", "status", "chips", "line-graph", "gauge", "notification"
+	WideLayout    string                 `json:"wide_layout,omitempty"`  // "side-by-side", "status", "chips", "line-graph", "gauge", "notification", "forecast"
 	StatusItems   []string               `json:"status_items,omitempty"` // e.g. ["clock", "page"]
 	GraphSize     int                    `json:"graph_size,omitempty"`   // ring buffer capacity (default 20)
 	GraphMin      float64                `json:"graph_min,omitempty"`    // Y-axis min (default 0)

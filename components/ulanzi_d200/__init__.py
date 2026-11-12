@@ -94,7 +94,7 @@ PRESSED_STYLE_SCHEMA = cv.Schema({
 
 LAYOUT_SCHEMA = cv.Schema({
     cv.Required(CONF_WIDGET): cv.one_of(
-        'entity_view', 'gauge', 'line_graph', 'status', 'chips', 'notification', lower=True
+        'entity_view', 'gauge', 'line_graph', 'status', 'chips', 'notification', 'forecast', lower=True
     ),
     cv.Optional(CONF_WHEN): cv.lambda_,
     # Common widget properties (string or lambda)

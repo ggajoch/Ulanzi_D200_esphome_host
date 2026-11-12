@@ -179,7 +179,7 @@ A layout defines what a section displays. Each section must have at least one la
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `widget` | string | **required** | Widget type: `entity_view`, `gauge`, `line_graph`, `status`, `chips`, `notification` |
+| `widget` | string | **required** | Widget type: `entity_view`, `gauge`, `line_graph`, `status`, `chips`, `notification`, `forecast` |
 | `when` | lambda | — | Condition for this layout. Omit for fallback (always matches) |
 
 Plus widget-specific properties — see [Widget Types](#widget-types) below.
@@ -403,6 +403,34 @@ service: ulanzi_d200.doorbell_alert
 data:
   message: "Someone at the door"
 ```
+
+### forecast
+
+A weather strip for the big key turned tall (position 13 at `rotation: 90`/`270`, about 200x460 px).
+On top the icon and `text` side by side (now: sky and temperature), `text2` under them (the
+condition; leave all three empty for no header and more room for rows); then the rows of `value`,
+and at the bottom a framed box (what matters most coming).
+
+```yaml
+- widget: forecast
+  color: "#111122"
+  icon_id: "weather-rainy"
+  icon_color: "#FFDD66"
+  text: "6,7°"
+  text2: "deszcz"
+  text2_color: "#AACCFF"
+  value: "17:00|weather-rainy|6°|1,8|11/20;21:00|weather-cloudy|5°||14/26;01:00|weather-cloudy|3°||16/29#pada do 20:00|1,8 mm|#4499FF"
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `color` | string/lambda | `"#333333"` | Background; every second row is drawn darker |
+| `icon_id`, `icon_color` | string/lambda | `""`, `"#FFFFFF"` | Top left icon |
+| `text`, `text_color` | string/lambda | `""`, `"#FFFFFF"` | Top right, large; also the rows' temperature colour |
+| `text2`, `text2_color` | string/lambda | `""`, `"#FFFFFF"` | Under them |
+| `value` | string/lambda | `""` | Rows separated by `;`, each `time\|icon\|temperature\|rain\|wind` (rain empty: no drop drawn); then optionally `#` and the box, `line 1\|line 2\|#colour` (the frame's colour) |
+
+The widget draws exactly what it is given: build the rows and the box in a lambda.
 
 ## Template Lambdas
 

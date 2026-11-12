@@ -87,7 +87,7 @@ ulanzi_d200 (1 per device)
         ├── on_press / on_release (ESPHome automations)
         └── layouts[] (conditional display states, first match wins)
               ├── when (lambda condition, evaluated every 1s)
-              ├── widget type (entity_view | gauge | line_graph | status | chips | notification)
+              ├── widget type (entity_view | gauge | line_graph | status | chips | notification | forecast)
               └── properties (text, color, icon_id, etc. — static or lambda)
 ```
 
